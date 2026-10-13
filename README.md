@@ -8,7 +8,7 @@
   <img src="Resources/app.png" width="128" alt="MX Master Mac app icon">
 </p>
 
-MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：常駐選單列，不裝 Logi Options+ 也能自訂按鍵、拇指手勢與 Actions Ring 圓環，並調整指標速度、SmartShift、捲動方向與觸覺回饋；2.0 起新增 **MX Flow**，把游標推到螢幕邊緣就能讓滑鼠切到另一台電腦。它是 Windows 版 [MX Master Portable](https://github.com/stone5202/MXMasterPortable) 的 macOS 版本，用 Swift 重新寫成。
+MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：常駐選單列，不裝 Logi Options+ 也能自訂按鍵、拇指手勢與 Actions Ring 圓環，並調整指標速度、SmartShift、捲動方向與觸覺回饋；2.0 起新增 **MX Flow**，把游標推到螢幕邊緣就能讓滑鼠切到另一台電腦。它和 Windows 版 [MX Master WIN](https://github.com/stone5202/MXMasterWIN)（原名 MX Master Portable）是同一個產品的兩個版本，功能與設定方式一致，macOS 版以 Swift 重新寫成；兩台電腦各裝一個版本，就能用 MX Flow 在 Mac 與 Windows 之間來回切換。
 
 > 目前版本：2.0 · 介面語言：繁體中文、English（預設跟隨系統）
 

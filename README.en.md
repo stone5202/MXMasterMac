@@ -8,7 +8,7 @@
   <img src="Resources/app.png" width="128" alt="MX Master Mac app icon">
 </p>
 
-MX Master Mac is a lightweight macOS utility for the Logitech MX Master 4. It lives in the menu bar and lets you customize buttons, thumb gestures and the Actions Ring, and adjust pointer speed, SmartShift, scroll direction and haptic feedback, without Logi Options+. Version 2.0 adds **MX Flow**: push the pointer against a screen edge and the mouse moves to another computer. It is the macOS counterpart of the Windows tool [MX Master Portable](https://github.com/stone5202/MXMasterPortable), rewritten in Swift.
+MX Master Mac is a lightweight macOS utility for the Logitech MX Master 4. It lives in the menu bar and lets you customize buttons, thumb gestures and the Actions Ring, and adjust pointer speed, SmartShift, scroll direction and haptic feedback, without Logi Options+. Version 2.0 adds **MX Flow**: push the pointer against a screen edge and the mouse moves to another computer. It is the macOS edition of the same product as [MX Master WIN](https://github.com/stone5202/MXMasterWIN) for Windows (formerly MX Master Portable), with the same features and the same way of setting them up, rewritten in Swift. Run one edition on each computer and MX Flow takes the mouse back and forth between Mac and Windows.
 
 > Current version: 2.0 · Interface languages: Traditional Chinese, English (follows the system by default)
 
