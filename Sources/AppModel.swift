@@ -4,7 +4,7 @@ import ServiceManagement
 
 // 全部的執行期狀態與輸入處理邏輯；只在主執行緒使用。
 final class AppModel: ObservableObject {
-    static let version = "1.1"
+    static let version = "1.1.1"
 
     @Published var config: Config { didSet { configChanged() } }
     @Published var status: DeviceStatus = .searching

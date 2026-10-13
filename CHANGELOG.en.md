@@ -4,9 +4,12 @@
   <a href="CHANGELOG.md">繁體中文</a> · <strong>English</strong>
 </p>
 
-## Unreleased
+## 1.1.1 — 2026-10-13
 
-- Fixed: the mouse was not found over the Logi Bolt receiver when the receiver was already plugged in and the mouse switched to it later. The app now keeps every available interface, retries when the mouse leaves its current connection or the receiver reports a connection, and retries every 3 seconds.
+- Works over the Logi Bolt receiver.
+- Fixed: the mouse was not found when the receiver was already plugged in and the mouse switched to it later.
+- Fixed: the mouse was not found over Bluetooth while the receiver stayed plugged in.
+- After the mouse switches between Bluetooth and Logi Bolt the app follows it without a restart; while disconnected it retries every 3 seconds.
 
 ## 1.1 — 2026-10-13
 

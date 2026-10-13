@@ -10,7 +10,7 @@
 
 MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：常駐選單列，不裝 Logi Options+ 也能自訂按鍵、拇指手勢與 Actions Ring 圓環，並調整指標速度、SmartShift、捲動方向與觸覺回饋。它是 Windows 版 [MX Master Portable](https://github.com/stone5202/MXMasterPortable) 的 macOS 版本，用 Swift 重新寫成。
 
-> 目前版本：1.1 · 介面語言：繁體中文、English（預設跟隨系統）
+> 目前版本：1.1.1 · 介面語言：繁體中文、English（預設跟隨系統）
 
 各版本的更新內容請參閱 [更新紀錄](CHANGELOG.md) 或 [GitHub Releases](https://github.com/stone5202/MXMasterMac/releases)。
 
@@ -49,14 +49,14 @@ MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：�
 - **Actions Ring 圓環**：八個位置都可自訂。可選按住模式（按住顯示、移動選擇、放開執行）或點選模式（按一下顯示，再點選）。外觀有「分格圓環」與「泡泡」兩種，大小與不透明度可調。
 - **拇指四向手勢**：按住手勢鍵並滑動，四個方向的動作都可自訂。
 - **裝置設定**：顯示電量與韌體版本；調整指標速度（DPI）、SmartShift、捲動方向與觸覺回饋強度。套用過的數值會保存，滑鼠重新連線後自動再套用。
-- **切換主機後自動恢復**：滑鼠切到別台電腦再切回來，專用按鍵會自動重新啟用。
+- **切換連線後自動恢復**：滑鼠切到別台電腦再切回來，或在 Bluetooth 與 Logi Bolt 之間切換，專用按鍵會自動重新啟用。
 - **其他**：設定自動儲存、只會執行一份、可暫停、可設定登入時自動啟動、介面可切換中文／英文。
 - **工程模式**：檢視滑鼠送出的事件，方便回報問題。
 
 ## 系統需求
 
 - macOS 14 或更新版本，Apple 晶片（開發與測試環境為 macOS 27）
-- Logitech MX Master 4（Bluetooth）
+- Logitech MX Master 4（Bluetooth 或 Logi Bolt 接收器）
 
 ## 需要的權限
 
@@ -65,7 +65,7 @@ MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：�
 
 ## 已知限制
 
-- 只在 MX Master 4（韌體 `RBM 27.03`、Bluetooth）上開發與測試；Logi Bolt 接收器的程式路徑沒有實測。
+- 只在 MX Master 4（韌體 `RBM 27.03`）上開發與測試；其他型號沒有測過。
 - 發布檔沒有 Apple 公證，也沒有開發者簽章；更新版本後可能需要重新允許兩個權限。
 - 與 Logi Options+ 同時執行時，兩者會互相覆寫按鍵改道與裝置設定，請擇一使用。
 - 側鍵與拇指滾輪的對應會套用到所有滑鼠（系統事件分不出來源裝置）。
@@ -78,7 +78,7 @@ MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：�
 - 專用按鍵（拇指手勢鍵 `0x00C3`、Actions Ring 鍵 `0x01A0`）：透過 `IOHIDManager`，以 HID++ 2.0 的 `0x1B04` 功能設定「暫時改道」，再接收按鍵通知。程式暫停或結束時會解除改道。
 - 一般按鍵與水平滾輪：`CGEventTap` 攔截，再以 `CGEvent` 送出鍵盤動作。
 - 裝置設定：HID++ 功能 `0x1004`（電量）、`0x0003`（韌體）、`0x2201`（DPI）、`0x2111`（SmartShift）、`0x2121`（捲動方向）、`0x19B0`（觸覺回饋）。每次寫入後都會回讀確認。
-- 重新連線偵測：`0x1D4B` 的通知、裝置出現／消失、系統喚醒。
+- 重新連線偵測：`0x1D4B` 的通知、裝置出現／消失、系統喚醒；沒連上時每 3 秒重試。
 
 HID++ 的功能編號與封包格式參考了開源專案 [Solaar](https://github.com/pwr-Solaar/Solaar) 與 [logiops](https://github.com/PixlOne/logiops) 的公開實作。
 

@@ -10,7 +10,7 @@
 
 MX Master Mac is a lightweight macOS utility for the Logitech MX Master 4. It lives in the menu bar and lets you customize buttons, thumb gestures and the Actions Ring, and adjust pointer speed, SmartShift, scroll direction and haptic feedback, without Logi Options+. It is the macOS counterpart of the Windows tool [MX Master Portable](https://github.com/stone5202/MXMasterPortable), rewritten in Swift.
 
-> Current version: 1.1 · Interface languages: Traditional Chinese, English (follows the system by default)
+> Current version: 1.1.1 · Interface languages: Traditional Chinese, English (follows the system by default)
 
 See the [changelog](CHANGELOG.en.md) or [GitHub Releases](https://github.com/stone5202/MXMasterMac/releases) for what changed in each version.
 
@@ -49,14 +49,14 @@ Quit Logi Options+ first: running both makes them overwrite each other's button 
 - **Actions Ring**: all eight positions are customizable. Choose hold mode (hold to show, move to choose, release to run) or click mode (press once to show, then click). Two looks, Ring and Bubbles, with adjustable size and opacity.
 - **Four-way thumb gestures**: hold the gesture button and swipe; all four directions are customizable.
 - **Device settings**: shows battery level and firmware version; adjusts pointer speed (DPI), SmartShift, scroll direction and haptic strength. Applied values are saved and re-applied when the mouse reconnects.
-- **Recovers after a host switch**: when the mouse goes to another computer and comes back, the special buttons are re-enabled automatically.
+- **Recovers after a connection change**: when the mouse goes to another computer and comes back, or switches between Bluetooth and Logi Bolt, the special buttons are re-enabled automatically.
 - **Other**: settings save automatically, single instance, can be paused, optional launch at login, Chinese / English interface.
 - **Engineering mode**: view the events the mouse sends, for reporting problems.
 
 ## Requirements
 
 - macOS 14 or later on Apple silicon (developed and tested on macOS 27)
-- Logitech MX Master 4 (Bluetooth)
+- Logitech MX Master 4 (Bluetooth or the Logi Bolt receiver)
 
 ## Permissions
 
@@ -65,7 +65,7 @@ Quit Logi Options+ first: running both makes them overwrite each other's button 
 
 ## Known limitations
 
-- Developed and tested only on the MX Master 4 (firmware `RBM 27.03`, Bluetooth); the Logi Bolt receiver path is untested.
+- Developed and tested only on the MX Master 4 (firmware `RBM 27.03`); other models are untested.
 - The release build is neither notarized nor signed with a developer certificate; after updating you may need to grant the two permissions again.
 - When running alongside Logi Options+, the two overwrite each other's diversion and device settings. Use only one.
 - Side-button and thumb-wheel mappings apply to every mouse (system events do not identify the source device).
@@ -78,7 +78,7 @@ Quit Logi Options+ first: running both makes them overwrite each other's button 
 - Special buttons (gesture button `0x00C3`, Actions Ring button `0x01A0`): through `IOHIDManager`, HID++ 2.0 feature `0x1B04` sets temporary diversion and the app receives the button notifications. Diversion is released when the app is paused or quits.
 - Standard buttons and the horizontal wheel: intercepted with a `CGEventTap`; keyboard actions are posted with `CGEvent`.
 - Device settings: HID++ features `0x1004` (battery), `0x0003` (firmware), `0x2201` (DPI), `0x2111` (SmartShift), `0x2121` (scroll direction), `0x19B0` (haptics). Every write is read back.
-- Reconnect detection: `0x1D4B` notifications, device arrival / removal, and system wake.
+- Reconnect detection: `0x1D4B` notifications, device arrival / removal, and system wake; while disconnected it retries every 3 seconds.
 
 HID++ feature ids and packet layouts follow the public implementations in [Solaar](https://github.com/pwr-Solaar/Solaar) and [logiops](https://github.com/PixlOne/logiops).
 
