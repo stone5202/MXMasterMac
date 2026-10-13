@@ -65,6 +65,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.addItem(.separator())
         menu.addItem(item(Lang.t("開啟設定…", "Open settings…"), #selector(showSettings), ","))
         menu.addItem(item(model.enabled ? Lang.t("暫停", "Pause") : Lang.t("啟用", "Resume"), #selector(toggleEnabled), ""))
+        // 打勾表示 MX Flow 開著；與設定視窗「MX Flow」頁的開關是同一個設定。
+        let flow = item("MX Flow", #selector(toggleFlow), "")
+        flow.state = model.config.edgeSwitch.enabled ? .on : .off
+        menu.addItem(flow)
         menu.addItem(.separator())
         menu.addItem(item(Lang.t("結束", "Quit"), #selector(quit), "q"))
     }
@@ -98,6 +102,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
     }
 
     @objc private func toggleEnabled() { model.setEnabled(!model.enabled) }
+    @objc private func toggleFlow() { model.config.edgeSwitch.enabled.toggle() }
     @objc private func quit() { NSApp.terminate(nil) }
 }
 
