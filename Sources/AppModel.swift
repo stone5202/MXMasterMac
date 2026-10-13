@@ -4,7 +4,7 @@ import ServiceManagement
 
 // 全部的執行期狀態與輸入處理邏輯；只在主執行緒使用。
 final class AppModel: ObservableObject {
-    static let version = "1.1.1"
+    static let version = "2.0"
 
     @Published var config: Config { didSet { configChanged() } }
     @Published var status: DeviceStatus = .searching
@@ -17,6 +17,9 @@ final class AppModel: ObservableObject {
     @Published var deviceMessage = ""
     @Published var launchAtLogin = false
     @Published var optionsPlusRunning = HIDPP.optionsPlusRunning
+    @Published var hosts: [HostEntry] = []
+    @Published var currentHost = -1
+    @Published var displayCount = EdgeGeometry.displays().count
 
     let hidpp = HIDPP()
     private let tap = EventTap()
@@ -36,6 +39,19 @@ final class AppModel: ObservableObject {
     private var lastWheelAction = Date.distantPast
     private var buttonState: [Int: Bool] = [:]
 
+    // 螢幕邊緣切換的進行狀態
+    private var moveMonitors: [Any] = []
+    private var displays = EdgeGeometry.displays()
+    private var edgeCandidate: ScreenEdge?
+    private var pushStart = Date.distantPast
+    private var lastPush = Date.distantPast
+    private var edgeCooldown = Date.distantPast
+    private var lastArrival = Date.distantPast
+    private var lastWake = Date.distantPast
+    private var sleeping = false
+    private var heldInputs = Set<String>()     // 目前按著的一般滑鼠按鍵（中鍵、側鍵）
+    private var deferredInput: MouseInput?     // 被選為切換按鍵的按鍵：動作延到放開時才執行
+
     init() {
         config = Config.load()
         Lang.load(config.language)
@@ -52,7 +68,11 @@ final class AppModel: ObservableObject {
         hidpp.onLog = { [weak self] in self?.log($0) }
         hidpp.onStatus = { [weak self] in self?.status = $0 }
         hidpp.onButton = { [weak self] cid, down in self?.vendorButton(cid, down) }
-        hidpp.onReady = { [weak self] in self?.deviceReady() }
+        hidpp.onReady = { [weak self] in
+            self?.deviceReady()
+            self?.refreshHosts()
+        }
+        hidpp.onArrival = { [weak self] in self?.mouseArrived() }
         hidpp.onBattery = { [weak self] percent, charging in
             self?.snapshot?.batteryPercent = percent
             self?.snapshot?.charging = charging
@@ -72,11 +92,24 @@ final class AppModel: ObservableObject {
         })
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil,
                                                           queue: .main) { [weak self] _ in
+            self?.sleeping = false
+            self?.lastWake = Date()
             DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self?.hidpp.recheck() }
         }
+        NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil,
+                                                          queue: .main) { [weak self] _ in self?.sleeping = true }
+        NotificationCenter.default.addObserver(forName: NSApplication.didChangeScreenParametersNotification, object: nil,
+                                               queue: .main) { [weak self] _ in
+            guard let self else { return }
+            self.displays = EdgeGeometry.displays()
+            self.displayCount = self.displays.count
+        }
+        updateMoveMonitors()
     }
 
     func shutdown() {
+        for monitor in moveMonitors { NSEvent.removeMonitor(monitor) }
+        moveMonitors.removeAll()
         tap.remove()
         hidpp.shutdown()
     }
@@ -91,6 +124,7 @@ final class AppModel: ObservableObject {
         ring.scale = CGFloat(config.ringScaleFactor)
         ring.bubbleScale = CGFloat(config.bubbleScaleFactor)
         ring.opacity = CGFloat(config.ringOpacity)
+        updateMoveMonitors()
     }
 
     func mapping(_ input: MouseInput) -> ActionBinding { config.binding(for: input) }
@@ -197,6 +231,142 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // MARK: - MX Flow：螢幕邊緣切換電腦
+
+    func refreshHosts() {
+        hidpp.readHosts { [weak self] hosts, current in
+            guard let self, !hosts.isEmpty else { return }
+            var hosts = hosts
+            // 啟動參數 -demoHosts YES：截圖時把頻道上的電腦名稱換成示範用的名稱。
+            if UserDefaults.standard.bool(forKey: "demoHosts") {
+                let names = ["MacBook Pro", "Office PC", "Office PC"]
+                for i in hosts.indices { hosts[i].name = i < names.count ? names[i] : "" }
+            }
+            self.hosts = hosts
+            self.currentHost = current
+        }
+    }
+
+    func hostTitle(_ index: Int) -> String {
+        let name = hosts.first { $0.index == index }?.name ?? ""
+        let channel = Lang.t("頻道 \(index + 1)", "Channel \(index + 1)")
+        return name.isEmpty ? channel : channel + " · " + name
+    }
+
+    func setEdgeTarget(_ edge: ScreenEdge, _ host: Int?) {
+        config.edgeSwitch.targets[edge.rawValue] = host
+    }
+
+    func switchHost(_ host: Int, reason: String) {
+        edgeCooldown = Date().addingTimeInterval(3)
+        resetEdge()
+        // 滑鼠離開後，按著的鍵不會再送放開過來；把進行中的狀態清掉，也不執行延後的動作。
+        deferredInput = nil
+        heldInputs.removeAll()
+        buttonState.removeAll()
+        cancelRing()
+        cancelGesture()
+        log("Switch host -> \(host) (\(reason))")
+        hidpp.changeHost(host) { [weak self] sent in
+            self?.log("Switch host sent=\(sent)")
+        }
+    }
+
+    // 只有功能開著且至少設定了一個邊緣時才監看游標移動。
+    private func updateMoveMonitors() {
+        let wanted = config.edgeSwitch.enabled && !config.edgeSwitch.targets.isEmpty
+        if wanted && moveMonitors.isEmpty {
+            // 按著中鍵或側鍵移動時，系統送的是 otherMouseDragged。
+            let mask: NSEvent.EventTypeMask = [.mouseMoved, .otherMouseDragged]
+            if let global = NSEvent.addGlobalMonitorForEvents(matching: mask, handler: { [weak self] in self?.mouseMoved($0) }) {
+                moveMonitors.append(global)
+            }
+            if let local = NSEvent.addLocalMonitorForEvents(matching: mask, handler: { [weak self] event in
+                self?.mouseMoved(event)
+                return event
+            }) {
+                moveMonitors.append(local)
+            }
+        } else if !wanted && !moveMonitors.isEmpty {
+            for monitor in moveMonitors { NSEvent.removeMonitor(monitor) }
+            moveMonitors.removeAll()
+            resetEdge()
+        }
+    }
+
+    private func resetEdge() {
+        edgeCandidate = nil
+    }
+
+    // 這顆按鍵是不是被選為「要按住才切換」的按鍵。
+    private func isEdgeKey(_ input: MouseInput) -> Bool {
+        config.edgeSwitch.enabled && config.edgeSwitch.modifierInput == input
+    }
+
+    private func edgeKeyHeld(_ settings: EdgeSwitchSettings) -> Bool {
+        if let flag = settings.modifierFlag { return NSEvent.modifierFlags.contains(flag) }
+        switch settings.modifierInput {
+        case .none: return true
+        case .gesture: return buttonState[0x00C3] == true
+        case .actionRing: return buttonState[0x01A0] == true
+        case .some(let input): return heldInputs.contains(input.rawValue)
+        }
+    }
+
+    // 游標貼著設定好的外緣，而且持續往外推滿指定時間才切換；停在邊緣不動、沿著邊緣滑動、按著左右鍵拖曳都不算。
+    private func mouseMoved(_ event: NSEvent) {
+        let settings = config.edgeSwitch
+        let key = settings.modifierInput
+        // 圓環或手勢進行中不切；但切換按鍵就是那顆鍵時，按住它本來就會叫出圓環或手勢。
+        guard enabled, settings.enabled, case .ready = status,
+              !ring.visible || key == .actionRing, !gestureActive || key == .gesture,
+              NSEvent.pressedMouseButtons & 0b11 == 0, let cg = event.cgEvent else { return resetEdge() }
+        let now = Date()
+        guard now >= edgeCooldown,
+              let edge = EdgeGeometry.edge(at: cg.location, displays: displays),
+              let target = settings.target(edge), target != currentHost else { return resetEdge() }
+        guard edgeKeyHeld(settings) else { return resetEdge() }
+        // 觸控式軌跡板或別的滑鼠推到邊緣時不切：收得到這隻滑鼠的輸入回報時，要求它剛剛才動過。
+        if let age = hidpp.motionAge, age > 0.3 { return resetEdge() }
+
+        let dx = cg.getDoubleValueField(.mouseEventDeltaX), dy = cg.getDoubleValueField(.mouseEventDeltaY)
+        let outward: Double, along: Double
+        switch edge {
+        case .left: (outward, along) = (-dx, abs(dy))
+        case .right: (outward, along) = (dx, abs(dy))
+        case .top: (outward, along) = (-dy, abs(dx))
+        case .bottom: (outward, along) = (dy, abs(dx))
+        }
+        guard outward > 0, outward >= along else { return }
+
+        if edge != edgeCandidate || now.timeIntervalSince(lastPush) > 0.25 {
+            edgeCandidate = edge
+            pushStart = now
+        }
+        lastPush = now
+        if now.timeIntervalSince(pushStart) >= settings.dwell {
+            switchHost(target, reason: "edge " + edge.rawValue)
+        }
+    }
+
+    // 滑鼠離開後又連回來：只設定了一個邊緣時，把游標移到那個邊緣（從那一側回來）。
+    // 分不出是從哪一台切回來的，設定了多個邊緣就不移動；電腦剛喚醒時的重新連線也不移動。
+    private func mouseArrived() {
+        refreshHosts()
+        let settings = config.edgeSwitch
+        let now = Date()
+        guard enabled, settings.enabled, settings.placeCursor, !sleeping,
+              now.timeIntervalSince(lastWake) > 60, now.timeIntervalSince(lastArrival) > 5 else { return }
+        lastArrival = now
+        let edges = ScreenEdge.allCases.filter { settings.target($0) != nil }
+        guard edges.count == 1, let location = CGEvent(source: nil)?.location,
+              let point = EdgeGeometry.arrivalPoint(for: edges[0], near: location, displays: displays) else { return }
+        CGWarpMouseCursorPosition(point)
+        CGAssociateMouseAndMouseCursorPosition(1)
+        edgeCooldown = now.addingTimeInterval(1)
+        log("Mouse arrived; cursor placed at \(edges[0].rawValue) edge")
+    }
+
     // MARK: - 專用按鍵（HID++）
 
     private func vendorButton(_ cid: Int, _ down: Bool) {
@@ -210,8 +380,8 @@ final class AppModel: ObservableObject {
         if cid == 0x00C3 {
             if config.gestureMode {
                 if down { beginGesture() } else if gestureActive { finishGesture() }
-            } else if down {
-                runMapped(.gesture)
+            } else {
+                clickMapped(.gesture, down)
             }
             return
         }
@@ -230,8 +400,22 @@ final class AppModel: ObservableObject {
                 let sent = selected.map { ActionRunner.run($0) } ?? false
                 log("ActionRing selected=\(selected?.action.rawValue ?? "None") sent=\(sent)")
             }
+        } else {
+            clickMapped(.actionRing, down)
+        }
+    }
+
+    // 專用鍵當一般按鍵用：按下就執行。被選為切換按鍵時改在放開時執行，切換了就不執行。
+    private func clickMapped(_ input: MouseInput, _ down: Bool) {
+        if isEdgeKey(input) {
+            if down {
+                deferredInput = input
+            } else if deferredInput == input {
+                deferredInput = nil
+                runMapped(input)
+            }
         } else if down {
-            runMapped(.actionRing)
+            runMapped(input)
         }
     }
 
@@ -345,10 +529,15 @@ final class AppModel: ObservableObject {
     }
 
     private func buttonDown(_ input: MouseInput, _ event: TapEvent) -> Bool {
+        heldInputs.insert(input.rawValue)
         let binding = mapping(input)
         if logging { log("Tap \(event.rawValue)") }
         if binding.isPassThrough { return false }
         swallowedButtons.insert(input.rawValue)
+        if isEdgeKey(input) {
+            deferredInput = input
+            return true
+        }
         DispatchQueue.main.async { [weak self] in
             let sent = ActionRunner.run(binding)
             self?.log("Mapped \(input.rawValue) selected=\(binding.action.rawValue) sent=\(sent)")
@@ -358,7 +547,12 @@ final class AppModel: ObservableObject {
 
     // 按下被吃掉的話，對應的放開也要吃掉，否則 App 會收到落單的放開事件。
     private func buttonUp(_ input: MouseInput) -> Bool {
-        swallowedButtons.remove(input.rawValue) != nil
+        heldInputs.remove(input.rawValue)
+        if deferredInput == input {
+            deferredInput = nil
+            DispatchQueue.main.async { [weak self] in self?.runMapped(input) }
+        }
+        return swallowedButtons.remove(input.rawValue) != nil
     }
 
     private func wheel(_ input: MouseInput) -> Bool {

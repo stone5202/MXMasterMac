@@ -8,9 +8,9 @@
   <img src="Resources/app.png" width="128" alt="MX Master Mac app icon">
 </p>
 
-MX Master Mac is a lightweight macOS utility for the Logitech MX Master 4. It lives in the menu bar and lets you customize buttons, thumb gestures and the Actions Ring, and adjust pointer speed, SmartShift, scroll direction and haptic feedback, without Logi Options+. It is the macOS counterpart of the Windows tool [MX Master Portable](https://github.com/stone5202/MXMasterPortable), rewritten in Swift.
+MX Master Mac is a lightweight macOS utility for the Logitech MX Master 4. It lives in the menu bar and lets you customize buttons, thumb gestures and the Actions Ring, and adjust pointer speed, SmartShift, scroll direction and haptic feedback, without Logi Options+. Version 2.0 adds **MX Flow**: push the pointer against a screen edge and the mouse moves to another computer. It is the macOS counterpart of the Windows tool [MX Master Portable](https://github.com/stone5202/MXMasterPortable), rewritten in Swift.
 
-> Current version: 1.1.1 · Interface languages: Traditional Chinese, English (follows the system by default)
+> Current version: 2.0 · Interface languages: Traditional Chinese, English (follows the system by default)
 
 See the [changelog](CHANGELOG.en.md) or [GitHub Releases](https://github.com/stone5202/MXMasterMac/releases) for what changed in each version.
 
@@ -32,6 +32,14 @@ See the [changelog](CHANGELOG.en.md) or [GitHub Releases](https://github.com/sto
   Buttons · Gestures & Ring · Pointer & Wheel
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/flow.en.png" width="80%" alt="MX Flow page: switching computers at a screen edge, and the Easy-Switch channels">
+</p>
+
+<p align="center">
+  MX Flow
+</p>
+
 ## Download and use
 
 1. Download `MXMasterMac.zip` from [Releases](https://github.com/stone5202/MXMasterMac/releases/latest), unzip it and drag `MX Master Mac.app` to Applications.
@@ -49,6 +57,7 @@ Quit Logi Options+ first: running both makes them overwrite each other's button 
 - **Actions Ring**: all eight positions are customizable. Choose hold mode (hold to show, move to choose, release to run) or click mode (press once to show, then click). Two looks, Ring and Bubbles, with adjustable size and opacity.
 - **Four-way thumb gestures**: hold the gesture button and swipe; all four directions are customizable.
 - **Device settings**: shows battery level and firmware version; adjusts pointer speed (DPI), SmartShift, scroll direction and haptic strength. Applied values are saved and re-applied when the mouse reconnects.
+- **MX Flow**: keep pushing the pointer against a screen edge and the mouse moves to the Easy-Switch channel you chose (another computer). Each of the four edges can target its own channel, the trigger time is adjustable, and a held keyboard key or mouse button can be required; with several displays only the outer edge of the outermost display triggers. The page also lists the computer stored on each of the three channels, with a button to switch directly.
 - **Recovers after a connection change**: when the mouse goes to another computer and comes back, or switches between Bluetooth and Logi Bolt, the special buttons are re-enabled automatically.
 - **Other**: settings save automatically, single instance, can be paused, optional launch at login, Chinese / English interface.
 - **Engineering mode**: view the events the mouse sends, for reporting problems.
@@ -70,7 +79,9 @@ Quit Logi Options+ first: running both makes them overwrite each other's button 
 - When running alongside Logi Options+, the two overwrite each other's diversion and device settings. Use only one.
 - Side-button and thumb-wheel mappings apply to every mouse (system events do not identify the source device).
 - Mission Control, App Exposé, Show Desktop and desktop switching send the default system shortcuts; they do nothing if those shortcuts were changed or disabled in System Settings → Keyboard → Keyboard Shortcuts.
-- Flow, Easy‑Switch management, per-application profiles and firmware updates from Options+ are not included.
+- MX Flow only moves the mouse: no clipboard or files are transferred and the keyboard does not follow. To come back the same way, the other computer must also run a version with MX Flow and have an edge set; otherwise press the Easy‑Switch button under the mouse.
+- When the mouse reconnects, the app cannot tell which computer it came from; with more than one edge set, the pointer is not moved to an edge.
+- Per-application profiles and firmware updates from Options+ are not included.
 - Button positions in the diagram are indicative and have not been checked against the hardware one by one.
 
 ## How it works
@@ -78,6 +89,7 @@ Quit Logi Options+ first: running both makes them overwrite each other's button 
 - Special buttons (gesture button `0x00C3`, Actions Ring button `0x01A0`): through `IOHIDManager`, HID++ 2.0 feature `0x1B04` sets temporary diversion and the app receives the button notifications. Diversion is released when the app is paused or quits.
 - Standard buttons and the horizontal wheel: intercepted with a `CGEventTap`; keyboard actions are posted with `CGEvent`.
 - Device settings: HID++ features `0x1004` (battery), `0x0003` (firmware), `0x2201` (DPI), `0x2111` (SmartShift), `0x2121` (scroll direction), `0x19B0` (haptics). Every write is read back.
+- MX Flow: `NSEvent` monitors watch pointer movement to tell when the pointer is held against the outer edge of the outermost display; the switch is sent with HID++ feature `0x1814` (Change Host), and `0x1815` reads the host name stored on each channel.
 - Reconnect detection: `0x1D4B` notifications, device arrival / removal, and system wake; while disconnected it retries every 3 seconds.
 
 HID++ feature ids and packet layouts follow the public implementations in [Solaar](https://github.com/pwr-Solaar/Solaar) and [logiops](https://github.com/PixlOne/logiops).

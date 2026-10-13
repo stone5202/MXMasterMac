@@ -4,6 +4,16 @@
   <a href="CHANGELOG.md">繁體中文</a> · <strong>English</strong>
 </p>
 
+## 2.0 — 2026-10-13
+
+- New: **MX Flow**. Keep pushing the pointer against a screen edge and the mouse moves to another computer (the Easy-Switch channel you chose).
+  - Each of the four edges (top, bottom, left, right) can target its own channel. With several displays only the outer edge of the outermost display triggers; edges between displays and corners never do.
+  - Adjustable trigger time (0.1–2.0 s), and an optional held key: Control, Option, Shift, Command or a button on the mouse.
+  - Resting at the edge, sliding along it, dragging with the left or right button, or an open ring or gesture never triggers a switch.
+  - When the mouse comes back, the pointer can appear at the edge you set.
+  - No network connection is made, no clipboard or files are transferred, and the keyboard does not follow.
+- Shows the computer name and connection type stored for each of the three Easy-Switch channels, with a button to switch directly.
+
 ## 1.1.1 — 2026-10-13
 
 - Works over the Logi Bolt receiver.

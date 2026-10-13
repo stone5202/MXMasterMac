@@ -72,6 +72,7 @@ struct Config: Codable {
     var ringOpacity = 1.0        // 0.4–1.0
     var language = "Auto"
     var device = DeviceSettings()
+    var edgeSwitch = EdgeSwitchSettings()
     var diagnosticsToFile = false
 
     static let defaultRing: [ActionBinding] = [
@@ -149,5 +150,7 @@ struct Config: Codable {
         language = (try? c.decode(String.self, forKey: .language)) ?? "Auto"
         device = (try? c.decode(DeviceSettings.self, forKey: .device)) ?? DeviceSettings()
         diagnosticsToFile = (try? c.decode(Bool.self, forKey: .diagnosticsToFile)) ?? false
+        edgeSwitch = (try? c.decode(EdgeSwitchSettings.self, forKey: .edgeSwitch)) ?? EdgeSwitchSettings()
+        edgeSwitch.dwell = min(max(edgeSwitch.dwell, EdgeSwitchSettings.dwellRange.lowerBound), EdgeSwitchSettings.dwellRange.upperBound)
     }
 }

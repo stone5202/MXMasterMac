@@ -20,6 +20,22 @@ struct DeviceSnapshot {
     var raw: [String] = []
 }
 
+// Easy-Switch 頻道上記錄的主機。
+struct HostEntry: Equatable {
+    var index = 0
+    var name = ""
+    var paired = false
+    var bus = 0                  // 4 = Bluetooth、5 = Logi Bolt（依實機回覆對照）
+
+    var busName: String {
+        switch bus {
+        case 4: return "Bluetooth"
+        case 5: return "Logi Bolt"
+        default: return ""
+        }
+    }
+}
+
 enum DeviceStatus: Equatable {
     case searching
     case ready(String)       // "BLE" / "BOLT"
@@ -42,6 +58,7 @@ final class HIDPP {
     var onButton: ((Int, Bool) -> Void)?
     var onReady: (() -> Void)?
     var onBattery: ((Int, Bool) -> Void)?
+    var onArrival: (() -> Void)?        // 滑鼠離開後又連回這台電腦
 
     private let work = DispatchQueue(label: "mxmastermac.hidpp")
     private var manager: IOHIDManager?
@@ -63,6 +80,8 @@ final class HIDPP {
     private var featureIndexes: [Int: UInt8] = [:]
     private var desiredEnabled = true
     private var stopped = false
+    private var everConnected = false
+    private var lastMotion: Double = 0  // 最近一次收到滑鼠一般輸入回報的時間；0 = 這次連線還沒收過（由 lock 保護）
 
     // 等待中的要求；由 HID 執行緒填入回覆。
     private let lock = NSLock()
@@ -201,7 +220,13 @@ final class HIDPP {
     }
 
     private func received(_ source: IOHIDDevice, _ bytes: [UInt8]) {
-        guard bytes[0] == 0x11 || bytes[0] == 0x10 else { return }
+        guard bytes[0] == 0x11 || bytes[0] == 0x10 else {
+            // 其餘是一般的移動／按鍵回報，只記時間，用來分辨游標是不是這隻滑鼠在動。
+            lock.lock()
+            lastMotion = ProcessInfo.processInfo.systemUptime
+            lock.unlock()
+            return
+        }
         lock.lock()
         if let key = pendingKey, bytes[1] == key.0 {
             if bytes[2] == key.1 && bytes[3] == key.2 {
@@ -280,6 +305,8 @@ final class HIDPP {
         }
         status(.ready(transportName))
         notifyReady()
+        if everConnected { notifyArrival() }
+        everConnected = true
         return true
     }
 
@@ -295,6 +322,9 @@ final class HIDPP {
         diverted.removeAll()
         pressed.removeAll()
         featureIndexes.removeAll()
+        lock.lock()
+        lastMotion = 0
+        lock.unlock()
     }
 
     private func discoverControls() {
@@ -371,6 +401,7 @@ final class HIDPP {
         } else if bytes[2] == wirelessIndex && wirelessIndex != 0 && bytes[3] == 0x00 {
             log("wireless status event " + hex(bytes, 4, 3) + "; checking diversion")
             ensureDiversion()
+            notifyArrival()
         } else if bytes[2] == batteryIndex && batteryIndex != 0 && bytes[3] == 0x00 {
             let percent = Int(bytes[4])
             let charging = bytes[6] == 1 || bytes[6] == 2
@@ -452,6 +483,63 @@ final class HIDPP {
             if !results.isEmpty, let again = self.snapshot() { current = again }
             let final = current
             DispatchQueue.main.async { completion(final, results) }
+        }
+    }
+
+    // MARK: - Easy-Switch 頻道
+
+    // 距離上一次收到滑鼠一般輸入回報多久；nil 表示這次連線還沒收過（無法判斷）。
+    var motionAge: Double? {
+        lock.lock()
+        defer { lock.unlock() }
+        return lastMotion == 0 ? nil : ProcessInfo.processInfo.systemUptime - lastMotion
+    }
+
+    // 讀出各頻道記錄的主機名稱與目前所在的頻道（0x1814 Change Host、0x1815 Hosts Info，格式依 Solaar）。
+    func readHosts(_ completion: @escaping ([HostEntry], Int) -> Void) {
+        work.async { [weak self] in
+            var hosts: [HostEntry] = []
+            var current = -1
+            if let self, self.device != nil, let info = self.call(0x1814, 0) {
+                current = Int(info[5])
+                for index in 0..<min(Int(info[4]), 8) {
+                    var entry = HostEntry(index: index)
+                    if let host = self.call(0x1815, 1, [UInt8(index)]) {
+                        entry.paired = host[5] != 0
+                        entry.bus = Int(host[6])
+                        let length = Int(host[8])
+                        var name: [UInt8] = []
+                        while name.count < length {
+                            guard let piece = self.call(0x1815, 3, [UInt8(index), UInt8(name.count)]) else { break }
+                            let chunk = Array(piece[6..<20].prefix(length - name.count))
+                            if chunk.isEmpty { break }
+                            name += chunk
+                        }
+                        entry.name = String(bytes: name, encoding: .utf8) ?? ""
+                    }
+                    hosts.append(entry)
+                }
+                self.log("hosts current=\(current) " + hosts.map { "\($0.index):\($0.name.isEmpty ? "-" : $0.name)/\($0.bus)" }.joined(separator: " "))
+            }
+            DispatchQueue.main.async { completion(hosts, current) }
+        }
+    }
+
+    // 把滑鼠切到另一個頻道。滑鼠會立刻離開這台電腦，有時來不及回覆，所以送出就算完成；
+    // 對方連不上時滑鼠可能自己回來，之後由定時重試接回。
+    func changeHost(_ host: Int, completion: @escaping (Bool) -> Void) {
+        work.async { [weak self] in
+            var sent = false
+            if let self, self.device != nil, let index = self.findFeature(0x1814),
+               let info = self.request(self.deviceIndex, index, 0, [], timeout: 0.9),
+               host >= 0, host < Int(info[4]), host != Int(info[5]) {
+                self.log("change host \(Int(info[5])) -> \(host)")
+                _ = self.request(self.deviceIndex, index, 1, [UInt8(host)], timeout: 0.3)
+                sent = true
+                self.reset()
+                self.status(.notFound)
+            }
+            DispatchQueue.main.async { completion(sent) }
         }
     }
 
@@ -621,6 +709,10 @@ final class HIDPP {
 
     private func status(_ value: DeviceStatus) {
         DispatchQueue.main.async { [weak self] in self?.onStatus?(value) }
+    }
+
+    private func notifyArrival() {
+        DispatchQueue.main.async { [weak self] in self?.onArrival?() }
     }
 
     private func notifyReady() {

@@ -4,13 +4,14 @@ import SwiftUI
 // MARK: - 共用外觀
 
 enum Page: Int, CaseIterable {
-    case buttons, ring, device, advanced
+    case buttons, ring, device, switching, advanced
 
     var title: String {
         switch self {
         case .buttons: return Lang.t("按鈕", "Buttons")
         case .ring: return Lang.t("手勢與圓環", "Gestures & Ring")
         case .device: return Lang.t("指標與滾輪", "Pointer & Wheel")
+        case .switching: return "MX Flow"
         case .advanced: return Lang.t("進階", "Advanced")
         }
     }
@@ -20,6 +21,7 @@ enum Page: Int, CaseIterable {
         case .buttons: return Lang.t("為每一顆按鍵選擇要執行的動作", "Choose what each button does")
         case .ring: return Lang.t("自訂 Actions Ring 圓環與拇指四向手勢", "Customize the Actions Ring and thumb gestures")
         case .device: return Lang.t("調整指標速度、滾輪與觸覺回饋", "Tune pointer speed, the wheel and haptics")
+        case .switching: return Lang.t("把游標推到螢幕邊緣，滑鼠就切到另一台電腦", "Push the pointer against a screen edge to move the mouse to another computer")
         case .advanced: return Lang.t("啟動方式、權限與工程模式", "Start-up, permissions and engineering mode")
         }
     }
@@ -29,6 +31,7 @@ enum Page: Int, CaseIterable {
         case .buttons: return "computermouse"
         case .ring: return "circle.hexagongrid"
         case .device: return "slider.horizontal.3"
+        case .switching: return "rectangle.on.rectangle"
         case .advanced: return "gearshape"
         }
     }
@@ -247,6 +250,7 @@ struct SettingsView: View {
                     case .buttons: ButtonsPage(model: model)
                     case .ring: RingPage(model: model)
                     case .device: DevicePage(model: model)
+                    case .switching: SwitchPage(model: model)
                     case .advanced: AdvancedPage(model: model)
                     }
                 }
@@ -829,6 +833,121 @@ struct DevicePage: View {
 }
 
 // MARK: - 進階
+
+// MARK: - 切換電腦
+
+struct SwitchPage: View {
+    @ObservedObject var model: AppModel
+
+    private var ready: Bool {
+        if case .ready = model.status { return true }
+        return false
+    }
+
+    // 還沒讀到頻道時（滑鼠不在線）先列出三個，讓設定仍然看得到。
+    private var channels: [Int] { model.hosts.isEmpty ? [0, 1, 2] : model.hosts.map(\.index) }
+
+    var body: some View {
+        Card(title: "MX Flow",
+             subtitle: Lang.t("游標貼著邊緣並持續往外推，滑鼠就切到指定的 Easy-Switch 頻道",
+                              "Keep pushing the pointer against an edge and the mouse moves to the chosen Easy-Switch channel")) {
+            SettingRow(title: Lang.t("啟用 MX Flow", "Enable MX Flow"),
+                       subtitle: Lang.t("拖曳中、圓環或手勢進行中不會切換", "Never switches while dragging or while the ring or a gesture is active")) {
+                Toggle("", isOn: $model.config.edgeSwitch.enabled).toggleStyle(.switch).labelsHidden()
+            }
+            Divider()
+            VStack(spacing: 8) {
+                ForEach(ScreenEdge.allCases, id: \.self) { edge in
+                    HStack(spacing: 10) {
+                        Image(systemName: edge.symbol).font(.system(size: 13, weight: .semibold))
+                            .foregroundStyle(Color.accentColor).frame(width: 22)
+                        Text(edge.title).font(.system(size: 13)).frame(width: 90, alignment: .leading)
+                        Spacer(minLength: 8)
+                        Picker("", selection: Binding(get: { model.config.edgeSwitch.target(edge) ?? -1 },
+                                                      set: { model.setEdgeTarget(edge, $0 < 0 ? nil : $0) })) {
+                            Text(Lang.t("不切換", "Off")).tag(-1)
+                            ForEach(channels, id: \.self) { index in
+                                Text(model.hostTitle(index) + (index == model.currentHost ? Lang.t("（這台電腦）", " (this computer)") : ""))
+                                    .tag(index)
+                            }
+                        }
+                        .labelsHidden().frame(width: 300)
+                    }
+                }
+            }
+            .disabled(!model.config.edgeSwitch.enabled).opacity(model.config.edgeSwitch.enabled ? 1 : 0.45)
+            Text(model.displayCount > 1
+                 ? Lang.t("偵測到 \(model.displayCount) 個螢幕：只有最外側螢幕的外緣會觸發，螢幕之間相接的邊與角落不會。",
+                          "\(model.displayCount) displays detected: only the outer edge of the outermost display triggers; edges between displays and corners never do.")
+                 : Lang.t("角落不會觸發。接上多個螢幕時，只有最外側螢幕的外緣會觸發。",
+                          "Corners never trigger. With several displays, only the outer edge of the outermost display triggers."))
+                .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Divider()
+            HStack(spacing: 14) {
+                Text(Lang.t("觸發時間", "Trigger time")).font(.system(size: 13)).frame(width: 86, alignment: .leading)
+                Slider(value: Binding(get: { model.config.edgeSwitch.dwell },
+                                      set: { model.config.edgeSwitch.dwell = ($0 * 10).rounded() / 10 }),
+                       in: EdgeSwitchSettings.dwellRange)
+                Text(verbatim: String(format: "%.1f ", model.config.edgeSwitch.dwell) + Lang.t("秒", "s"))
+                    .font(.system(size: 13, weight: .semibold)).monospacedDigit().frame(width: 60, alignment: .trailing)
+            }
+            .disabled(!model.config.edgeSwitch.enabled).opacity(model.config.edgeSwitch.enabled ? 1 : 0.45)
+            SettingRow(title: Lang.t("要按住按鍵才切換", "Require a held key"),
+                       subtitle: Lang.t("按住選定的鍵再把游標推到邊緣才會切換。選滑鼠按鍵時，它原本的動作改在放開時執行",
+                                        "Hold the chosen key while pushing against the edge. A mouse button chosen here runs its own action on release instead")) {
+                Picker("", selection: $model.config.edgeSwitch.modifier) {
+                    Text(EdgeSwitchSettings.modifierTitle("none")).tag("none")
+                    Section(Lang.t("鍵盤", "Keyboard")) {
+                        ForEach(EdgeSwitchSettings.keyboardModifiers, id: \.self) { name in
+                            Text(EdgeSwitchSettings.modifierTitle(name)).tag(name)
+                        }
+                    }
+                    Section(Lang.t("滑鼠", "Mouse")) {
+                        ForEach(EdgeSwitchSettings.mouseModifiers, id: \.self) { input in
+                            Text(input.title).tag(input.rawValue)
+                        }
+                    }
+                }
+                .labelsHidden().frame(width: 200)
+            }
+            .disabled(!model.config.edgeSwitch.enabled).opacity(model.config.edgeSwitch.enabled ? 1 : 0.45)
+            SettingRow(title: Lang.t("切回來時把游標移到邊緣", "Place the pointer at the edge on return"),
+                       subtitle: Lang.t("只設定一個邊緣時有效；滑鼠重新連上這台電腦時游標會出現在那一側",
+                                        "Works when exactly one edge is set; the pointer appears on that side when the mouse reconnects")) {
+                Toggle("", isOn: $model.config.edgeSwitch.placeCursor).toggleStyle(.switch).labelsHidden()
+            }
+            .disabled(!model.config.edgeSwitch.enabled).opacity(model.config.edgeSwitch.enabled ? 1 : 0.45)
+        }
+        .onAppear { model.refreshHosts() }
+
+        Card(title: Lang.t("Easy-Switch 頻道", "Easy-Switch channels"),
+             subtitle: Lang.t("滑鼠記錄的三個連線對象；名稱由各電腦上的軟體寫入，可能是空的或舊的",
+                              "The three hosts stored on the mouse; names are written by software on each computer and may be empty or stale")) {
+            if model.hosts.isEmpty {
+                Text(Lang.t("滑鼠連上後會顯示頻道。", "Channels appear once the mouse is connected."))
+                    .font(.system(size: 12)).foregroundStyle(.secondary)
+            }
+            ForEach(model.hosts, id: \.index) { host in
+                HStack(spacing: 10) {
+                    NumberBadge(text: "\(host.index + 1)", active: host.index == model.currentHost)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(host.name.isEmpty ? Lang.t("（沒有名稱）", "(no name)") : host.name).font(.system(size: 13))
+                        Text([host.busName, host.paired ? "" : Lang.t("未配對", "Not paired"),
+                              host.index == model.currentHost ? Lang.t("目前使用中", "In use now") : ""]
+                            .filter { !$0.isEmpty }.joined(separator: " · "))
+                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    }
+                    Spacer()
+                    Button(Lang.t("切換過去", "Switch")) { model.switchHost(host.index, reason: "manual") }
+                        .controlSize(.small).disabled(host.index == model.currentHost || !host.paired || !ready)
+                }
+            }
+            Text(Lang.t("切過去之後，另一台電腦也要執行本程式並設定邊緣，才能用同樣方式切回來；否則請按滑鼠底部的 Easy-Switch 鍵。不會傳送剪貼簿或檔案，鍵盤也不會跟著切換。",
+                        "To come back the same way, the other computer must also run this app with an edge set; otherwise press the Easy-Switch button under the mouse. No clipboard or files are transferred, and the keyboard does not follow."))
+                .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+        }
+    }
+}
 
 struct PermissionRow: View {
     let title: String
