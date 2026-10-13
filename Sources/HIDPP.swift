@@ -148,8 +148,24 @@ final class HIDPP {
             guard let self, !self.stopped else { return }
             if !self.candidates.contains(where: { CFEqual($0, candidate) }) { self.candidates.append(candidate) }
             self.startRetryTimer()
-            self.tryConnect()
+            // 已經連著別的介面時，新介面出現可能表示滑鼠換了連線方式（例如離開 Bolt 改用藍牙）；
+            // 接收器不會消失，所以要主動確認原本那條連線還有沒有回應。
+            if self.device != nil { self.verifyAlive() } else { self.tryConnect() }
         }
+    }
+
+    // 向目前連線的滑鼠問一次改道狀態；沒有回應就當作它已經離開這條連線，改試其他介面。
+    private func verifyAlive() {
+        guard device != nil, let cid = diverted.first else { return }
+        if readDiversion(cid) != nil {
+            ensureDiversion()
+            return
+        }
+        log("\(transportName) connection no longer answers; looking for the mouse on other interfaces")
+        reset()
+        status(.searching)
+        tryConnect()
+        if device == nil { status(.notFound) }
     }
 
     private func removed(_ gone: IOHIDDevice) {
@@ -179,7 +195,7 @@ final class HIDPP {
         guard retryTimer == nil else { return }
         let timer = DispatchSource.makeTimerSource(queue: work)
         timer.schedule(deadline: .now() + 3, repeating: 3)
-        timer.setEventHandler { [weak self] in self?.tryConnect() }
+        timer.setEventHandler { [weak self] in self?.tryConnect() }   // 已連線時 tryConnect 不做事
         timer.resume()
         retryTimer = timer
     }
@@ -218,7 +234,7 @@ final class HIDPP {
             work.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 guard let self, !self.stopped else { return }
                 self.log("receiver connection notice " + self.hex(bytes, 0, 7))
-                if self.device == nil { self.tryConnect() } else { self.ensureDiversion() }
+                if self.device == nil { self.tryConnect() } else { self.verifyAlive() }
             }
             return
         }
@@ -378,7 +394,10 @@ final class HIDPP {
 
     // 系統喚醒或定時檢查時呼叫。
     func recheck() {
-        work.async { [weak self] in self?.ensureDiversion() }
+        work.async { [weak self] in
+            guard let self else { return }
+            if self.device != nil { self.verifyAlive() } else { self.tryConnect() }
+        }
     }
 
     // 結束前解除改道，讓專用鍵回到原本功能。會等到完成或逾時。
