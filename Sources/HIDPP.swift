@@ -50,6 +50,8 @@ final class HIDPP {
 
     // 以下狀態只在 work 佇列上讀寫。
     private var device: IOHIDDevice?
+    private var candidates: [IOHIDDevice] = []      // 目前在線、可講 HID++ 的介面（藍牙滑鼠或 Bolt 接收器）
+    private var retryTimer: DispatchSourceTimer?
     private var isBolt = false
     private var deviceIndex: UInt8 = 0xFF
     private var reprogIndex: UInt8 = 0
@@ -141,19 +143,45 @@ final class HIDPP {
         let output = IOHIDDeviceGetProperty(candidate, kIOHIDMaxOutputReportSizeKey as CFString) as? Int ?? 0
         let product = IOHIDDeviceGetProperty(candidate, kIOHIDProductIDKey as CFString) as? Int ?? 0
         guard opened, output >= 20 else { return }
+        _ = product
         work.async { [weak self] in
-            guard let self, !self.stopped, self.device == nil else { return }
-            self.connect(candidate, bolt: product == HIDPP.boltProduct)
+            guard let self, !self.stopped else { return }
+            if !self.candidates.contains(where: { CFEqual($0, candidate) }) { self.candidates.append(candidate) }
+            self.startRetryTimer()
+            self.tryConnect()
         }
     }
 
     private func removed(_ gone: IOHIDDevice) {
         work.async { [weak self] in
-            guard let self, let current = self.device, CFEqual(current, gone) else { return }
+            guard let self else { return }
+            self.candidates.removeAll { CFEqual($0, gone) }
+            guard let current = self.device, CFEqual(current, gone) else { return }
             self.log("device removed")
             self.reset()
             self.status(.notFound)
+            // 滑鼠可能只是換了連線方式（例如由藍牙改到 Bolt 接收器），馬上試其他介面。
+            self.tryConnect()
         }
+    }
+
+    // 還沒連上時，逐一嘗試在線的介面。Bolt 接收器一直插著，滑鼠切過來時不會有「裝置出現」事件，
+    // 所以另外靠接收器的連線通知與定時重試。
+    private func tryConnect() {
+        guard device == nil, !stopped else { return }
+        for candidate in candidates {
+            let product = IOHIDDeviceGetProperty(candidate, kIOHIDProductIDKey as CFString) as? Int ?? 0
+            if connect(candidate, bolt: product == HIDPP.boltProduct) { return }
+        }
+    }
+
+    private func startRetryTimer() {
+        guard retryTimer == nil else { return }
+        let timer = DispatchSource.makeTimerSource(queue: work)
+        timer.schedule(deadline: .now() + 3, repeating: 3)
+        timer.setEventHandler { [weak self] in self?.tryConnect() }
+        timer.resume()
+        retryTimer = timer
     }
 
     private func received(_ source: IOHIDDevice, _ bytes: [UInt8]) {
@@ -175,8 +203,25 @@ final class HIDPP {
                 log("HID++ error=" + String(format: "%02X", bytes[5]) + " for feature index " + String(format: "%02X", key.1))
                 return
             }
+            // Bolt 接收器對沒有裝置的槽位回 HID++ 1.0 格式的錯誤（10 idx 8F …）；馬上結束等待，不必等逾時。
+            if bytes[2] == 0x8F && bytes.count >= 6 && bytes[3] == key.1 && bytes[4] == key.2 {
+                pendingReply = nil
+                pendingKey = nil
+                pendingSemaphore?.signal()
+                lock.unlock()
+                return
+            }
         }
         lock.unlock()
+        // 接收器的裝置連線通知（10 idx 41 …）：滑鼠剛連上或剛離開這個接收器。
+        if bytes[0] == 0x10 && bytes[2] == 0x41 {
+            work.asyncAfter(deadline: .now() + 0.3) { [weak self] in
+                guard let self, !self.stopped else { return }
+                self.log("receiver connection notice " + self.hex(bytes, 0, 7))
+                if self.device == nil { self.tryConnect() } else { self.ensureDiversion() }
+            }
+            return
+        }
         // 軟體 ID 為 0 的是滑鼠主動送出的事件；其餘是別的程式（例如 Options+）的回覆。
         guard bytes[3] & 0x0F == 0 else { return }
         work.async { [weak self] in self?.handleEvent(source, bytes) }
@@ -184,7 +229,8 @@ final class HIDPP {
 
     // MARK: - 連線與改道（work 佇列）
 
-    private func connect(_ candidate: IOHIDDevice, bolt: Bool) {
+    @discardableResult
+    private func connect(_ candidate: IOHIDDevice, bolt: Bool) -> Bool {
         device = candidate
         isBolt = bolt
         let candidates: [UInt8] = bolt ? [1, 2, 3, 4, 5, 6] : [0xFF]
@@ -201,8 +247,7 @@ final class HIDPP {
         }
         guard found else {
             reset()
-            if !bolt { status(.problem(Lang.t("找到滑鼠，但 HID++ 沒有回應", "Mouse found, but HID++ did not answer"))) }
-            return
+            return false
         }
         wirelessIndex = findFeature(0x1D4B) ?? 0
         batteryIndex = findFeature(0x1004) ?? 0
@@ -210,11 +255,16 @@ final class HIDPP {
         discoverControls()
         guard !diverted.isEmpty else {
             status(.problem(Lang.t("滑鼠沒有回報可改道的專用按鍵", "The mouse reported no divertable special buttons")))
-            return
+            reset()
+            return false
         }
-        guard applyDiversion(desiredEnabled) else { return }
+        guard applyDiversion(desiredEnabled) else {
+            reset()
+            return false
+        }
         status(.ready(transportName))
         notifyReady()
+        return true
     }
 
     private var transportName: String { isBolt ? "BOLT" : "BLE" }
@@ -335,6 +385,8 @@ final class HIDPP {
     func shutdown() {
         work.sync {
             stopped = true
+            retryTimer?.cancel()
+            retryTimer = nil
             if device != nil, reprogIndex != 0, !diverted.isEmpty { _ = applyDiversion(false) }
             reset()
         }

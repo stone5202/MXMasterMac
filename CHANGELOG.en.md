@@ -4,6 +4,10 @@
   <a href="CHANGELOG.md">繁體中文</a> · <strong>English</strong>
 </p>
 
+## Unreleased
+
+- Fixed: the mouse was not found over the Logi Bolt receiver when the receiver was already plugged in and the mouse switched to it later. The app now keeps every available interface, retries when the mouse leaves its current connection or the receiver reports a connection, and retries every 3 seconds.
+
 ## 1.1 — 2026-10-13
 
 First public release. The version number matches MX Master Portable 1.1 for Windows.
