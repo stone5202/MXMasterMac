@@ -51,6 +51,24 @@ enum MouseInput: String, CaseIterable, Codable {
     }
 }
 
+// 適合滑過圓環時用的短促觸覺波形（MX Master 4 的 0x19B0 都支援；編號參考 Solaar）。
+struct HapticWave: Identifiable {
+    let id: Int
+    let title: String
+
+    static let defaultWave = 0x04
+    static var all: [HapticWave] {
+        [
+            HapticWave(id: 0x1B, title: Lang.t("極輕", "Whisper")),
+            HapticWave(id: 0x04, title: Lang.t("輕微（預設）", "Subtle (default)")),
+            HapticWave(id: 0x01, title: Lang.t("柔和", "Soft")),
+            HapticWave(id: 0x03, title: Lang.t("柔和碰撞", "Soft bump")),
+            HapticWave(id: 0x00, title: Lang.t("清脆", "Crisp")),
+            HapticWave(id: 0x02, title: Lang.t("清脆碰撞", "Crisp bump")),
+        ]
+    }
+}
+
 struct DeviceSettings: Codable, Equatable {
     var dpi: Int?
     var wheelMode: Int?          // 1 自由、2 段落
@@ -70,6 +88,9 @@ struct Config: Codable {
     var ringSize = 50.0          // 整體大小 0–100%，50% 是預設
     var bubbleSize = 50.0        // 泡泡圓圈大小 0–100%，50% 是預設
     var ringOpacity = 1.0        // 0.4–1.0
+    var ringColor = "dark"       // "dark" 深色、"light" 白色
+    var ringHaptic = true        // 游標滑過圓環選項時讓滑鼠震一下
+    var ringHapticWave = 0x04    // 震動波形，見 HapticWave
     var language = "Auto"
     var device = DeviceSettings()
     var edgeSwitch = EdgeSwitchSettings()
@@ -147,6 +168,10 @@ struct Config: Codable {
         ringSize = min(max((try? c.decode(Double.self, forKey: .ringSize)) ?? 50, 0), 100)
         bubbleSize = min(max((try? c.decode(Double.self, forKey: .bubbleSize)) ?? 50, 0), 100)
         ringOpacity = min(max((try? c.decode(Double.self, forKey: .ringOpacity)) ?? 1.0, 0.4), 1.0)
+        ringColor = (try? c.decode(String.self, forKey: .ringColor)) == "light" ? "light" : "dark"
+        ringHaptic = (try? c.decode(Bool.self, forKey: .ringHaptic)) ?? true
+        ringHapticWave = (try? c.decode(Int.self, forKey: .ringHapticWave)) ?? HapticWave.defaultWave
+        if !HapticWave.all.contains(where: { $0.id == ringHapticWave }) { ringHapticWave = HapticWave.defaultWave }
         language = (try? c.decode(String.self, forKey: .language)) ?? "Auto"
         device = (try? c.decode(DeviceSettings.self, forKey: .device)) ?? DeviceSettings()
         diagnosticsToFile = (try? c.decode(Bool.self, forKey: .diagnosticsToFile)) ?? false

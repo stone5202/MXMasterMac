@@ -85,6 +85,8 @@ final class HIDPP {
 
     // 等待中的要求；由 HID 執行緒填入回覆。
     private let lock = NSLock()
+    private var hapticPending = false   // 只在主執行緒讀寫
+    private var hapticFailureLogged = false
     private var pendingKey: (UInt8, UInt8, UInt8)?
     private var pendingReply: [UInt8]?
     private var pendingSemaphore: DispatchSemaphore?
@@ -616,6 +618,9 @@ final class HIDPP {
             s.hapticPresent = true
             s.hapticLevel = reply[4] & 0x01 != 0 ? Int(reply[5]) : 0
         }
+        if let reply = call(0x19B0, 0) {
+            s.raw.append("19B0 caps=" + hex(reply, 4, 8))
+        }
         return s
     }
 
@@ -661,6 +666,22 @@ final class HIDPP {
         guard sent != nil, let check = call(0x19B0, 1) else { return false }
         let enabled = check[4] & 0x01 != 0
         return level <= 0 ? !enabled : enabled && Int(check[5]) == level
+    }
+
+    // 叫滑鼠播一次觸覺波形（0x19B0 函式 4，波形編號參考 Solaar：0x04 = 輕微碰撞）。
+    // 強度跟著滑鼠本身的觸覺回饋設定，關閉時不會震。上一次還沒送完就略過，避免排隊延遲。
+    func playHaptic(_ waveform: UInt8) {
+        guard !hapticPending else { return }
+        hapticPending = true
+        work.async { [weak self] in
+            guard let self else { return }
+            if self.device != nil, let index = self.findFeature(0x19B0),
+               self.request(self.deviceIndex, index, 4, [waveform], timeout: 0.25) == nil, !self.hapticFailureLogged {
+                self.hapticFailureLogged = true
+                self.log("haptic play \(waveform) no reply")
+            }
+            DispatchQueue.main.async { self.hapticPending = false }
+        }
     }
 
     // MARK: - 傳輸

@@ -4,7 +4,7 @@ import ServiceManagement
 
 // 全部的執行期狀態與輸入處理邏輯；只在主執行緒使用。
 final class AppModel: ObservableObject {
-    static let version = "2.0"
+    static let version = "2.1"
 
     @Published var config: Config { didSet { configChanged() } }
     @Published var status: DeviceStatus = .searching
@@ -58,6 +58,7 @@ final class AppModel: ObservableObject {
         ring.slots = config.ring
         ring.clickMode = config.ringClick
         ring.bubbles = config.ringStyle == "bubble"
+        ring.light = config.ringColor == "light"
         ring.scale = CGFloat(config.ringScaleFactor)
         ring.bubbleScale = CGFloat(config.bubbleScaleFactor)
         ring.opacity = CGFloat(config.ringOpacity)
@@ -66,6 +67,10 @@ final class AppModel: ObservableObject {
 
     func start() {
         hidpp.onLog = { [weak self] in self?.log($0) }
+        ring.onSlotEnter = { [weak self] _ in
+            guard let self, self.config.ringHaptic else { return }
+            self.hidpp.playHaptic(UInt8(clamping: self.config.ringHapticWave))
+        }
         hidpp.onStatus = { [weak self] in self?.status = $0 }
         hidpp.onButton = { [weak self] cid, down in self?.vendorButton(cid, down) }
         hidpp.onReady = { [weak self] in
@@ -121,6 +126,7 @@ final class AppModel: ObservableObject {
         ring.slots = config.ring
         ring.clickMode = config.ringClick
         ring.bubbles = config.ringStyle == "bubble"
+        ring.light = config.ringColor == "light"
         ring.scale = CGFloat(config.ringScaleFactor)
         ring.bubbleScale = CGFloat(config.bubbleScaleFactor)
         ring.opacity = CGFloat(config.ringOpacity)

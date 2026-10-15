@@ -14,6 +14,16 @@ final class RingView: NSView {
     var showNumbers = false { didSet { needsDisplay = true } }
     var bubbles = false { didSet { needsDisplay = true } }      // 泡泡樣式：每格一個圓形圖示
     var bubbleScale: CGFloat = 1 { didSet { needsDisplay = true } }   // 泡泡圓圈的大小倍率
+    var light = false { didSet { needsDisplay = true } }        // 白色配色；選到的格子仍是強調色
+
+    // 深色（預設）與白色兩套配色。
+    private var faceGradient: NSGradient? {
+        light ? NSGradient(starting: NSColor(calibratedWhite: 1.0, alpha: 0.97), ending: NSColor(calibratedRed: 0.92, green: 0.93, blue: 0.95, alpha: 0.97))
+              : NSGradient(starting: NSColor(calibratedRed: 0.20, green: 0.21, blue: 0.25, alpha: 0.96),
+                           ending: NSColor(calibratedRed: 0.11, green: 0.12, blue: 0.15, alpha: 0.96))
+    }
+    private var ink: NSColor { light ? NSColor(calibratedRed: 0.17, green: 0.19, blue: 0.24, alpha: 1) : .white }
+    private var edge: NSColor { light ? NSColor(white: 0, alpha: 0.10) : NSColor(white: 1, alpha: 0.07) }
 
     override var isFlipped: Bool { false }
     override var isOpaque: Bool { false }
@@ -53,12 +63,11 @@ final class RingView: NSView {
         shadow.shadowBlurRadius = 5 * scale
         shadow.shadowOffset = NSSize(width: 0, height: -1.5 * scale)
         shadow.set()
-        NSColor(white: 0.80, alpha: 0.55).setFill()
+        (light ? NSColor(white: 0.45, alpha: 0.28) : NSColor(white: 0.80, alpha: 0.55)).setFill()
         rim.fill()
         NSGraphicsContext.restoreGraphicsState()
 
-        let normal = NSGradient(starting: NSColor(calibratedRed: 0.20, green: 0.21, blue: 0.25, alpha: 0.96),
-                                ending: NSColor(calibratedRed: 0.11, green: 0.12, blue: 0.15, alpha: 0.96))
+        let normal = faceGradient
         let chosen = NSGradient(starting: accent.blended(withFraction: 0.22, of: .white) ?? accent,
                                 ending: accent.blended(withFraction: 0.18, of: .black) ?? accent)
 
@@ -76,22 +85,23 @@ final class RingView: NSView {
             path.appendArc(withCenter: origin, radius: RingView.innerRadius * scale, startAngle: end, endAngle: start, clockwise: true)
             path.close()
             (isSelected ? chosen : normal)?.draw(in: path, angle: -90)
-            NSColor(white: 1, alpha: isSelected ? 0.30 : 0.07).setStroke()
+            (isSelected ? NSColor(white: 1, alpha: 0.30) : edge).setStroke()
             path.lineWidth = 1
             path.stroke()
 
             let labelRadius = (RingView.outerRadius + RingView.innerRadius) / 2 * scale
             let point = NSPoint(x: origin.x + cos(radians) * labelRadius, y: origin.y + sin(radians) * labelRadius)
             let binding = index < slots.count ? slots[index] : ActionBinding(.passThrough)
-            drawSlot(binding, at: point, scale: scale, number: showNumbers ? index + 1 : nil)
+            drawSlot(binding, at: point, scale: scale, number: showNumbers ? index + 1 : nil, selected: isSelected)
         }
 
         // 中心：顯示目前選到的動作或操作提示。
         let radius = RingView.centerRadius * scale
         let circle = NSBezierPath(ovalIn: NSRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
-        NSGradient(starting: NSColor(calibratedRed: 0.13, green: 0.14, blue: 0.17, alpha: 0.97),
-                   ending: NSColor(calibratedRed: 0.07, green: 0.08, blue: 0.10, alpha: 0.97))?.draw(in: circle, angle: -90)
-        NSColor(white: 1, alpha: 0.14).setStroke()
+        (light ? NSGradient(starting: NSColor(calibratedWhite: 1.0, alpha: 0.98), ending: NSColor(calibratedRed: 0.95, green: 0.96, blue: 0.97, alpha: 0.98))
+               : NSGradient(starting: NSColor(calibratedRed: 0.13, green: 0.14, blue: 0.17, alpha: 0.97),
+                            ending: NSColor(calibratedRed: 0.07, green: 0.08, blue: 0.10, alpha: 0.97)))?.draw(in: circle, angle: -90)
+        (light ? NSColor(white: 0, alpha: 0.12) : NSColor(white: 1, alpha: 0.14)).setStroke()
         circle.lineWidth = 1.2
         circle.stroke()
 
@@ -105,13 +115,14 @@ final class RingView: NSView {
         }
         if slots.indices.contains(selected), slots[selected].isPassThrough { text = Lang.t("未設定", "Not set") }
         drawText(text, in: NSRect(x: center.x - radius + 6, y: center.y - radius + 6, width: radius * 2 - 12, height: radius * 2 - 12),
-                 size: 12 * scale, weight: .semibold, vertical: true)
+                 size: 12 * scale, weight: .semibold, vertical: true, color: ink)
     }
 
     // 泡泡樣式：八個圓形圖示圍成一圈，只有游標指到的那一個會在中央顯示名稱。
     private func drawBubbles(scale: CGFloat, center: NSPoint, accent: NSColor) {
-        let normal = NSGradient(starting: NSColor(calibratedRed: 0.22, green: 0.23, blue: 0.27, alpha: 0.96),
-                                ending: NSColor(calibratedRed: 0.11, green: 0.12, blue: 0.15, alpha: 0.96))
+        let normal = light ? faceGradient
+            : NSGradient(starting: NSColor(calibratedRed: 0.22, green: 0.23, blue: 0.27, alpha: 0.96),
+                         ending: NSColor(calibratedRed: 0.11, green: 0.12, blue: 0.15, alpha: 0.96))
         let chosen = NSGradient(starting: accent.blended(withFraction: 0.22, of: .white) ?? accent,
                                 ending: accent.blended(withFraction: 0.18, of: .black) ?? accent)
         let bubble = 39 * bubbleScale
@@ -127,20 +138,20 @@ final class RingView: NSView {
 
             NSGraphicsContext.saveGraphicsState()
             let shadow = NSShadow()
-            shadow.shadowColor = NSColor.black.withAlphaComponent(0.35)
+            shadow.shadowColor = NSColor.black.withAlphaComponent(light ? 0.25 : 0.35)
             shadow.shadowBlurRadius = 7 * scale
             shadow.shadowOffset = NSSize(width: 0, height: -2 * scale)
             shadow.set()
-            NSColor(white: 0.12, alpha: 0.9).setFill()
+            (light ? NSColor(white: 0.97, alpha: 0.9) : NSColor(white: 0.12, alpha: 0.9)).setFill()
             circle.fill()
             NSGraphicsContext.restoreGraphicsState()
             (isSelected ? chosen : normal)?.draw(in: circle, angle: -90)
-            NSColor(white: 1, alpha: isSelected ? 0.45 : 0.22).setStroke()
+            (isSelected ? NSColor(white: 1, alpha: 0.45) : light ? NSColor(white: 0, alpha: 0.12) : NSColor(white: 1, alpha: 0.22)).setStroke()
             circle.lineWidth = 1.4 * scale
             circle.stroke()
 
             let binding = index < slots.count ? slots[index] : ActionBinding(.passThrough)
-            let color = NSColor(white: 1, alpha: binding.isPassThrough ? 0.35 : 1)
+            let color = (isSelected ? NSColor.white : ink).withAlphaComponent(binding.isPassThrough ? 0.35 : 1)
             let configuration = NSImage.SymbolConfiguration(pointSize: (isSelected ? 29 : 25) * bubbleScale * scale, weight: .medium)
                 .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
             if let image = NSImage(systemSymbolName: ActionCatalog.symbol(binding.action), accessibilityDescription: nil)?
@@ -166,24 +177,30 @@ final class RingView: NSView {
             let font = NSFont.systemFont(ofSize: 14 * scale, weight: .semibold)
             let width = min((title as NSString).size(withAttributes: [.font: font]).width + 30 * scale, 150 * scale)
             let pill = NSRect(x: center.x - width / 2, y: center.y - 17 * scale, width: width, height: 34 * scale)
-            NSColor(calibratedRed: 0.08, green: 0.09, blue: 0.11, alpha: 0.94).setFill()
-            NSBezierPath(roundedRect: pill, xRadius: 17 * scale, yRadius: 17 * scale).fill()
-            drawText(title, in: pill.insetBy(dx: 10 * scale, dy: 8 * scale), size: 14 * scale, weight: .semibold, vertical: false)
+            let shape = NSBezierPath(roundedRect: pill, xRadius: 17 * scale, yRadius: 17 * scale)
+            (light ? NSColor(white: 1, alpha: 0.97) : NSColor(calibratedRed: 0.08, green: 0.09, blue: 0.11, alpha: 0.94)).setFill()
+            shape.fill()
+            if light {
+                NSColor(white: 0, alpha: 0.12).setStroke()
+                shape.lineWidth = 1
+                shape.stroke()
+            }
+            drawText(title, in: pill.insetBy(dx: 10 * scale, dy: 8 * scale), size: 14 * scale, weight: .semibold, vertical: false, color: ink)
         } else if !showNumbers {
             // 沒選到東西時，中央留一個小圓點標示取消的位置。
             let radius = 9 * scale
             let dot = NSBezierPath(ovalIn: NSRect(x: center.x - radius, y: center.y - radius, width: radius * 2, height: radius * 2))
-            NSColor(white: 0.1, alpha: 0.75).setFill()
+            (light ? NSColor(white: 0.98, alpha: 0.85) : NSColor(white: 0.1, alpha: 0.75)).setFill()
             dot.fill()
-            NSColor(white: 1, alpha: 0.5).setStroke()
+            (light ? NSColor(white: 0, alpha: 0.3) : NSColor(white: 1, alpha: 0.5)).setStroke()
             dot.lineWidth = 1.4 * scale
             dot.stroke()
         }
     }
 
-    private func drawSlot(_ binding: ActionBinding, at point: NSPoint, scale: CGFloat, number: Int?) {
+    private func drawSlot(_ binding: ActionBinding, at point: NSPoint, scale: CGFloat, number: Int?, selected: Bool) {
         let dimmed = binding.isPassThrough
-        let color = NSColor(white: 1, alpha: dimmed ? 0.35 : 1)
+        let color = (selected ? NSColor.white : ink).withAlphaComponent(dimmed ? 0.35 : 1)
         let configuration = NSImage.SymbolConfiguration(pointSize: 21 * scale, weight: .medium)
             .applying(NSImage.SymbolConfiguration(paletteColors: [color]))
         if let image = NSImage(systemSymbolName: ActionCatalog.symbol(binding.action), accessibilityDescription: nil)?
@@ -246,12 +263,17 @@ final class RingOverlay {
         get { view.bubbles }
         set { view.bubbles = newValue }
     }
+    var light: Bool {
+        get { view.light }
+        set { view.light = newValue }
+    }
     var scale: CGFloat = 1          // 圓環大小倍率
     var bubbleScale: CGFloat {
         get { view.bubbleScale }
         set { view.bubbleScale = newValue }
     }
     var opacity: CGFloat = 1        // 圓環不透明度
+    var onSlotEnter: ((Int) -> Void)?   // 游標移進另一格時呼叫（觸覺回饋用）
 
     init() {
         panel = NSPanel(contentRect: view.frame, styleMask: [.borderless, .nonactivatingPanel],
@@ -316,7 +338,9 @@ final class RingOverlay {
 
     private func track() {
         let index = slotUnderCursor()
-        view.selected = index >= 0 ? index : -1
+        let selected = index >= 0 ? index : -1
+        if selected >= 0 && selected != view.selected { onSlotEnter?(selected) }
+        view.selected = selected
     }
 }
 

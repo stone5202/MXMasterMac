@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         item.menu = menu
         statusItem = item
 
+        ActionRunner.openSettings = { [weak self] in self?.showSettings() }
         model.start()
         // 被 kill 時也要解除改道，否則專用鍵會停在沒人接收的狀態。
         for number in [SIGTERM, SIGINT] {

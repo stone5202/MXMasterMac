@@ -529,6 +529,7 @@ struct RingPreview: NSViewRepresentable {
     let selected: Int
     let bubbles: Bool
     let bubbleScale: CGFloat
+    let light: Bool
 
     func makeNSView(context: Context) -> RingView {
         let view = RingView(frame: .zero)
@@ -536,6 +537,7 @@ struct RingPreview: NSViewRepresentable {
         view.slots = slots
         view.bubbles = bubbles
         view.bubbleScale = bubbleScale
+        view.light = light
         return view
     }
 
@@ -544,6 +546,7 @@ struct RingPreview: NSViewRepresentable {
         view.selected = selected
         view.bubbles = bubbles
         view.bubbleScale = bubbleScale
+        view.light = light
     }
 }
 
@@ -567,11 +570,29 @@ struct RingPage: View {
                 Toggle("", isOn: $model.config.ringClick).toggleStyle(.switch).labelsHidden()
             }
             .disabled(!model.config.ringMode)
+            SettingRow(title: Lang.t("滑過選項時震動", "Haptic tick on each slice"),
+                       subtitle: Lang.t("游標移到另一格時滑鼠輕震一下；強度依「指標與滾輪」頁的觸覺回饋", "The mouse taps lightly as the pointer enters a slice; strength follows Haptic feedback on the Pointer & Wheel page")) {
+                Toggle("", isOn: $model.config.ringHaptic).toggleStyle(.switch).labelsHidden()
+            }
+            .disabled(!model.config.ringMode)
+            SettingRow(title: Lang.t("震動波形", "Haptic waveform"),
+                       subtitle: Lang.t("選了會立刻在滑鼠上震一下", "The mouse plays it as soon as you pick one")) {
+                HStack(spacing: 6) {
+                    Picker("", selection: $model.config.ringHapticWave) {
+                        ForEach(HapticWave.all) { Text($0.title).tag($0.id) }
+                    }
+                    .labelsHidden().frame(width: 150)
+                    Button(Lang.t("試震", "Try")) { model.hidpp.playHaptic(UInt8(clamping: model.config.ringHapticWave)) }
+                }
+            }
+            .onChange(of: model.config.ringHapticWave) { model.hidpp.playHaptic(UInt8(clamping: model.config.ringHapticWave)) }
+            .disabled(!model.config.ringMode || !model.config.ringHaptic)
+            .opacity(model.config.ringMode && model.config.ringHaptic ? 1 : 0.45)
             Divider()
             HStack(alignment: .center, spacing: 20) {
                 // 預覽會跟著大小與透明度設定變化；大小 100% 時剛好填滿這個區域。
                 RingPreview(slots: model.config.ring, selected: highlight ?? -1, bubbles: model.config.ringStyle == "bubble",
-                            bubbleScale: CGFloat(model.config.bubbleScaleFactor))
+                            bubbleScale: CGFloat(model.config.bubbleScaleFactor), light: model.config.ringColor == "light")
                     .frame(width: 300 * model.config.ringScaleFactor / Config.maxRingScaleFactor,
                            height: 300 * model.config.ringScaleFactor / Config.maxRingScaleFactor)
                     .opacity(model.config.ringOpacity)
@@ -599,6 +620,14 @@ struct RingPage: View {
                 Picker("", selection: $model.config.ringStyle) {
                     Text(Lang.t("分格圓環", "Ring")).tag("ring")
                     Text(Lang.t("泡泡", "Bubbles")).tag("bubble")
+                }
+                .pickerStyle(.segmented).labelsHidden().frame(width: 220)
+            }
+            SettingRow(title: Lang.t("顏色", "Color"),
+                       subtitle: Lang.t("選到的格子一律用強調色", "The selected slice always uses the accent color")) {
+                Picker("", selection: $model.config.ringColor) {
+                    Text(Lang.t("深色", "Dark")).tag("dark")
+                    Text(Lang.t("白色", "White")).tag("light")
                 }
                 .pickerStyle(.segmented).labelsHidden().frame(width: 220)
             }

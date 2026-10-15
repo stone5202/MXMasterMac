@@ -19,6 +19,8 @@ enum MappedAction: String, CaseIterable, Codable {
     case finder, systemSettings, calculator, activityMonitor
     // 輸入
     case insertDate, insertTime, enter, escape, delete
+    // 本程式
+    case openSettings
     // 自訂
     case customShortcut, launch
 }
@@ -56,7 +58,7 @@ enum ActionCatalog {
 
     static var groups: [Group] {
         [
-            Group(title: Lang.t("一般", "General"), actions: [.passThrough]),
+            Group(title: Lang.t("一般", "General"), actions: [.passThrough, .openSettings]),
             Group(title: Lang.t("導覽", "Navigation"), actions: [
                 .navigateBack, .navigateForward, .missionControl, .appExpose, .showDesktop,
                 .launchpad, .spaceLeft, .spaceRight, .appSwitcher]),
@@ -126,6 +128,7 @@ enum ActionCatalog {
         case .enter: return "Enter"
         case .escape: return "Esc"
         case .delete: return "Delete"
+        case .openSettings: return Lang.t("MX設定", "MX Settings")
         case .customShortcut: return Lang.t("自訂快捷鍵…", "Custom shortcut…")
         case .launch: return Lang.t("開啟 App／檔案／網址…", "Open app / file / URL…")
         }
@@ -182,6 +185,7 @@ enum ActionCatalog {
         case .enter: return "return"
         case .escape: return "escape"
         case .delete: return "delete.left"
+        case .openSettings: return "slider.horizontal.3"
         case .customShortcut: return "command"
         case .launch: return "arrow.up.forward.app"
         }
@@ -190,6 +194,7 @@ enum ActionCatalog {
 
 enum ActionRunner {
     private static let source = CGEventSource(stateID: .hidSystemState)
+    static var openSettings: (() -> Void)?     // 由 AppDelegate 設定：開啟本程式的設定視窗
 
     // 回傳 false 表示沒有送出任何東西（例如缺少輔助使用權限或參數是空的）。
     @discardableResult
@@ -248,6 +253,11 @@ enum ActionRunner {
             guard let shortcut = Shortcut(param: binding.param) else { return false }
             return combo(shortcut.keyCode, shortcut.flags)
         case .launch: return launch(binding.param)
+        case .openSettings:
+            guard let openSettings else { return false }
+            // 等圓環或手勢提示先收起來再開視窗。
+            DispatchQueue.main.async { openSettings() }
+            return true
         }
     }
 

@@ -10,7 +10,7 @@
 
 MX Master Mac is a lightweight macOS utility for the Logitech MX Master 4. It lives in the menu bar and lets you customize buttons, thumb gestures and the Actions Ring, and adjust pointer speed, SmartShift, scroll direction and haptic feedback, without Logi Options+. Version 2.0 adds **MX Flow**: push the pointer against a screen edge and the mouse moves to another computer. It is the macOS edition of the same product as [MX Master Win](https://github.com/stone5202/MXMasterWin) for Windows (formerly MX Master Portable), with the same features and the same way of setting them up, rewritten in Swift. Run one edition on each computer and MX Flow takes the mouse back and forth between Mac and Windows.
 
-> Current version: 2.0 · Interface languages: Traditional Chinese, English (follows the system by default)
+> Current version: 2.1 · Interface languages: Traditional Chinese, English (follows the system by default)
 
 See the [changelog](CHANGELOG.en.md) or [GitHub Releases](https://github.com/stone5202/MXMasterMac/releases) for what changed in each version.
 
@@ -52,9 +52,9 @@ Quit Logi Options+ first: running both makes them overwrite each other's button 
 ## Features
 
 - **Button mapping**: middle button, gesture button, both side buttons, thumb wheel left and right, and the Actions Ring button each get their own action.
-- **Built-in actions**: about 50, including back / forward, Mission Control, App Exposé, Show Desktop, switch desktop, switch app, copy / paste / cut, undo / redo, select all / save / find, play / pause, previous / next track, volume and mute, tabs (new / close / reopen / refresh / zoom), windows (minimize / close / full screen), Spotlight, screenshot, emoji, lock screen, Finder, System Settings, Calculator, Activity Monitor, type today's date or the current time, Enter, Esc, Delete.
+- **Built-in actions**: about 50, including back / forward, Mission Control, App Exposé, Show Desktop, switch desktop, switch app, copy / paste / cut, undo / redo, select all / save / find, play / pause, previous / next track, volume and mute, tabs (new / close / reopen / refresh / zoom), windows (minimize / close / full screen), Spotlight, screenshot, emoji, lock screen, Finder, System Settings, Calculator, Activity Monitor, type today's date or the current time, Enter, Esc, Delete, and "MX Settings", which opens this app's settings window.
 - **Custom actions**: record any key combination, or open an app, file, folder or URL.
-- **Actions Ring**: all eight positions are customizable. Choose hold mode (hold to show, move to choose, release to run) or click mode (press once to show, then click). Two looks, Ring and Bubbles, with adjustable size and opacity.
+- **Actions Ring**: all eight positions are customizable. Choose hold mode (hold to show, move to choose, release to run) or click mode (press once to show, then click). Two looks, Ring and Bubbles, in dark or white, with adjustable size and opacity. The mouse taps lightly as the pointer moves onto another slice (can be turned off; six waveforms to choose from).
 - **Four-way thumb gestures**: hold the gesture button and swipe; all four directions are customizable.
 - **Device settings**: shows battery level and firmware version; adjusts pointer speed (DPI), SmartShift, scroll direction and haptic strength. Applied values are saved and re-applied when the mouse reconnects.
 - **MX Flow**: keep pushing the pointer against a screen edge and the mouse moves to the Easy-Switch channel you chose (another computer). Each of the four edges can target its own channel, the trigger time is adjustable, and a held keyboard key or mouse button can be required; with several displays only the outer edge of the outermost display triggers. The page also lists the computer stored on each of the three channels, with a button to switch directly; the menu bar menu has an MX Flow switch as well.
