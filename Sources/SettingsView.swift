@@ -1,16 +1,18 @@
 import AppKit
 import SwiftUI
+import UserNotifications
 
 // MARK: - 共用外觀
 
 enum Page: Int, CaseIterable {
-    case buttons, ring, device, switching, advanced
+    case buttons, ring, device, haptics, switching, advanced
 
     var title: String {
         switch self {
         case .buttons: return Lang.t("按鈕", "Buttons")
         case .ring: return Lang.t("手勢與圓環", "Gestures & Ring")
         case .device: return Lang.t("指標與滾輪", "Pointer & Wheel")
+        case .haptics: return Lang.t("觸覺回饋", "Haptics")
         case .switching: return "MX Flow"
         case .advanced: return Lang.t("進階", "Advanced")
         }
@@ -20,9 +22,10 @@ enum Page: Int, CaseIterable {
         switch self {
         case .buttons: return Lang.t("為每一顆按鍵選擇要執行的動作", "Choose what each button does")
         case .ring: return Lang.t("自訂 Actions Ring 圓環與拇指四向手勢", "Customize the Actions Ring and thumb gestures")
-        case .device: return Lang.t("調整指標速度、滾輪與觸覺回饋", "Tune pointer speed, the wheel and haptics")
+        case .device: return Lang.t("調整指標速度、精準模式與滾輪", "Tune pointer speed, precision mode and the wheel")
+        case .haptics: return Lang.t("設定震動強度，以及哪些操作要讓滑鼠輕震一下", "Set the strength and choose which moments make the mouse tap")
         case .switching: return Lang.t("把游標推到螢幕邊緣，滑鼠就切到另一台電腦", "Push the pointer against a screen edge to move the mouse to another computer")
-        case .advanced: return Lang.t("啟動方式、權限與工程模式", "Start-up, permissions and engineering mode")
+        case .advanced: return Lang.t("啟動方式、電池提醒、權限與工程模式", "Start-up, battery alerts, permissions and engineering mode")
         }
     }
 
@@ -31,6 +34,7 @@ enum Page: Int, CaseIterable {
         case .buttons: return "computermouse"
         case .ring: return "circle.hexagongrid"
         case .device: return "slider.horizontal.3"
+        case .haptics: return "hand.tap"
         case .switching: return "rectangle.on.rectangle"
         case .advanced: return "gearshape"
         }
@@ -248,8 +252,9 @@ struct SettingsView: View {
                     notices
                     switch page {
                     case .buttons: ButtonsPage(model: model)
-                    case .ring: RingPage(model: model)
-                    case .device: DevicePage(model: model)
+                    case .ring: RingPage(model: model, page: $page)
+                    case .device: DevicePage(model: model, page: $page)
+                    case .haptics: HapticsPage(model: model)
                     case .switching: SwitchPage(model: model)
                     case .advanced: AdvancedPage(model: model)
                     }
@@ -552,6 +557,7 @@ struct RingPreview: NSViewRepresentable {
 
 struct RingPage: View {
     @ObservedObject var model: AppModel
+    @Binding var page: Page
     @State private var highlight: Int?
     private let arrows = ["arrow.up", "arrow.right", "arrow.down", "arrow.left"]
 
@@ -571,23 +577,11 @@ struct RingPage: View {
             }
             .disabled(!model.config.ringMode)
             SettingRow(title: Lang.t("滑過選項時震動", "Haptic tick on each slice"),
-                       subtitle: Lang.t("游標移到另一格時滑鼠輕震一下；強度依「指標與滾輪」頁的觸覺回饋", "The mouse taps lightly as the pointer enters a slice; strength follows Haptic feedback on the Pointer & Wheel page")) {
-                Toggle("", isOn: $model.config.ringHaptic).toggleStyle(.switch).labelsHidden()
+                       subtitle: model.config.ringHaptic
+                        ? Lang.t("已開啟・", "On · ") + HapticWave.title(model.config.ringHapticWave) + Lang.t("；在「觸覺回饋」頁調整", "; adjust on the Haptics page")
+                        : Lang.t("已關閉；在「觸覺回饋」頁調整", "Off; adjust on the Haptics page")) {
+                Button(Lang.t("觸覺回饋設定…", "Haptics…")) { page = .haptics }
             }
-            .disabled(!model.config.ringMode)
-            SettingRow(title: Lang.t("震動波形", "Haptic waveform"),
-                       subtitle: Lang.t("選了會立刻在滑鼠上震一下", "The mouse plays it as soon as you pick one")) {
-                HStack(spacing: 6) {
-                    Picker("", selection: $model.config.ringHapticWave) {
-                        ForEach(HapticWave.all) { Text($0.title).tag($0.id) }
-                    }
-                    .labelsHidden().frame(width: 150)
-                    Button(Lang.t("試震", "Try")) { model.hidpp.playHaptic(UInt8(clamping: model.config.ringHapticWave)) }
-                }
-            }
-            .onChange(of: model.config.ringHapticWave) { model.hidpp.playHaptic(UInt8(clamping: model.config.ringHapticWave)) }
-            .disabled(!model.config.ringMode || !model.config.ringHaptic)
-            .opacity(model.config.ringMode && model.config.ringHaptic ? 1 : 0.45)
             Divider()
             HStack(alignment: .center, spacing: 20) {
                 // 預覽會跟著大小與透明度設定變化；大小 100% 時剛好填滿這個區域。
@@ -675,6 +669,24 @@ struct RingPage: View {
             }
             .disabled(!model.config.gestureMode)
             .opacity(model.config.gestureMode ? 1 : 0.45)
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 14) {
+                    Text(Lang.t("手勢靈敏度", "Sensitivity")).font(.system(size: 13)).frame(width: 86, alignment: .leading)
+                    Text(Lang.t("低", "Low")).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    Slider(value: $model.config.gestureSensitivity, in: 0...100) { editing in
+                        if !editing { model.config.gestureSensitivity = (model.config.gestureSensitivity / 5).rounded() * 5 }
+                    }
+                    Text(Lang.t("高", "High")).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    Text(verbatim: "\(Int(model.config.gestureSensitivity.rounded()))%").font(.system(size: 13, weight: .semibold))
+                        .monospacedDigit().frame(width: 50, alignment: .trailing)
+                }
+                Text(Lang.t("越高，滑動越短的距離就會判定方向；目前約 \(Int((65 * model.config.gestureDistanceFactor).rounded())) pt。50% 是原本的距離",
+                            "Higher means a shorter swipe picks a direction; currently about \(Int((65 * model.config.gestureDistanceFactor).rounded())) pt. 50% is the original distance"))
+                    .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            .disabled(!model.config.gestureMode)
+            .opacity(model.config.gestureMode ? 1 : 0.45)
         }
     }
 }
@@ -706,13 +718,22 @@ struct StatTile: View {
 
 struct DevicePage: View {
     @ObservedObject var model: AppModel
+    @Binding var page: Page
     @State private var dpi = 1000.0
+    @State private var precisionDpi = 400.0
     @State private var freeSpin = false
     @State private var threshold = 12.0
     @State private var autoShift = true
     @State private var inverted = false
-    @State private var haptic = 60.0
     @State private var loaded = false
+
+    // 可以「按住」的按鍵。拇指手勢鍵與 Actions Ring 鍵要在手勢／圓環關閉時才是單純的按鍵。
+    private var precisionInputs: [MouseInput] {
+        var inputs: [MouseInput] = [.middle, .back, .forward]
+        if !model.config.gestureMode || model.precisionTrigger == .gesture { inputs.append(.gesture) }
+        if !model.config.ringMode || model.precisionTrigger == .actionRing { inputs.append(.actionRing) }
+        return inputs
+    }
 
     var body: some View {
         Group {
@@ -726,20 +747,59 @@ struct DevicePage: View {
                 }
 
                 if snapshot.dpi > 0 {
+                    let step = Double(max(snapshot.dpiStep, 50))
+                    let lowest = Double(max(snapshot.dpiMin, 200))
+                    let highest = Double(max(snapshot.dpiMax, 4000))
                     Card(title: Lang.t("指標速度", "Pointer speed"),
-                         subtitle: Lang.t("範圍", "Range") + " \(max(snapshot.dpiMin, 200))–\(max(snapshot.dpiMax, 4000)) DPI") {
+                         subtitle: Lang.t("範圍", "Range") + " \(Int(lowest))–\(Int(highest)) DPI") {
                         HStack(spacing: 14) {
                             Image(systemName: "tortoise").foregroundStyle(.secondary)
                             // 不用 step：有刻度的滑桿會畫出上百條刻度線。改在套用時對齊步進。
-                            Slider(value: $dpi, in: Double(max(snapshot.dpiMin, 200))...Double(max(snapshot.dpiMax, 4000))) { editing in
+                            Slider(value: $dpi, in: lowest...highest) { editing in
                                 if !editing {
-                                    dpi = snap(dpi, step: Double(max(snapshot.dpiStep, 50)))
-                                    applyDpi()
+                                    dpi = snap(dpi, step: step)
+                                    model.applyDpi(Int(dpi))
                                 }
                             }
                             Image(systemName: "hare").foregroundStyle(.secondary)
-                            Text(verbatim: "\(Int(snap(dpi, step: Double(max(snapshot.dpiStep, 50))))) DPI").font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                            Text(verbatim: "\(Int(snap(dpi, step: step))) DPI").font(.system(size: 13, weight: .semibold)).monospacedDigit()
                                 .frame(width: 84, alignment: .trailing)
+                        }
+                        .disabled(model.precisionActive).opacity(model.precisionActive ? 0.45 : 1)
+
+                        Divider()
+                        SettingRow(title: Lang.t("精準模式", "Precision mode"),
+                                   subtitle: Lang.t("按住觸發按鍵時暫時降到較低的速度，放開就恢復；適合修圖、對齊等精細操作",
+                                                    "Hold the trigger to drop to a slower speed for detailed work; release to go back")) {
+                            if model.precisionActive {
+                                Text(Lang.t("使用中", "Active"))
+                                    .font(.system(size: 11, weight: .semibold)).foregroundStyle(.white)
+                                    .padding(.horizontal, 9).padding(.vertical, 3)
+                                    .background(Capsule().fill(Color.accentColor))
+                            }
+                        }
+                        HStack(spacing: 14) {
+                            Text(Lang.t("精準速度", "Precision speed")).font(.system(size: 13)).frame(width: 110, alignment: .leading)
+                            Slider(value: $precisionDpi, in: lowest...max(lowest + step, dpi)) { editing in
+                                if !editing {
+                                    precisionDpi = snap(precisionDpi, step: step)
+                                    model.config.precisionDpi = Int(precisionDpi)
+                                }
+                            }
+                            Text(verbatim: "\(Int(snap(precisionDpi, step: step))) DPI").font(.system(size: 13, weight: .semibold)).monospacedDigit()
+                                .frame(width: 84, alignment: .trailing)
+                        }
+                        SettingRow(title: Lang.t("觸發按鍵", "Trigger"),
+                                   subtitle: model.config.gestureMode || model.config.ringMode
+                                    ? Lang.t("按住這顆鍵就進入精準模式；手勢鍵與圓環鍵要先關閉手勢或圓環才能選",
+                                             "Hold it for precision mode; the gesture and ring buttons need their gestures or ring off")
+                                    : Lang.t("按住這顆鍵就進入精準模式，放開即恢復", "Hold it for precision mode; release to go back")) {
+                            Picker("", selection: Binding(get: { model.precisionTrigger?.rawValue ?? "" },
+                                                          set: { model.setPrecisionTrigger(MouseInput(rawValue: $0)) })) {
+                                Text(Lang.t("不使用", "None")).tag("")
+                                ForEach(precisionInputs, id: \.self) { input in Text(input.title).tag(input.rawValue) }
+                            }
+                            .labelsHidden().frame(width: 200)
                         }
                     }
                 }
@@ -759,7 +819,8 @@ struct DevicePage: View {
                         if snapshot.smartShiftPresent {
                             if snapshot.wheelInvertPresent { Divider() }
                             SettingRow(title: Lang.t("滾輪模式", "Wheel mode"),
-                                       subtitle: Lang.t("段落：一格一格；自由滾動：無阻力", "Ratchet: step by step; free spin: no resistance")) {
+                                       subtitle: Lang.t("段落：一格一格；自由滾動：無阻力。也可以把「切換段落／自由滾動」指派給按鍵或圓環",
+                                                        "Ratchet: step by step; free spin: no resistance. \"Toggle ratchet / free spin\" can also go on a button or the ring")) {
                                 Picker("", selection: $freeSpin) {
                                     Text(Lang.t("段落", "Ratchet")).tag(false)
                                     Text(Lang.t("自由滾動", "Free spin")).tag(true)
@@ -784,19 +845,6 @@ struct DevicePage: View {
                         }
                     }
                 }
-
-                if snapshot.hapticPresent {
-                    Card(title: Lang.t("觸覺回饋", "Haptic feedback"), subtitle: Lang.t("拉到最左邊為關閉", "Drag fully left to turn it off")) {
-                        HStack(spacing: 14) {
-                            Image(systemName: "iphone.radiowaves.left.and.right").foregroundStyle(.secondary)
-                            Slider(value: $haptic, in: 0...100) { editing in
-                                if !editing { haptic = snap(haptic, step: 5); applyHaptic() }
-                            }
-                            Text(snap(haptic, step: 5) == 0 ? Lang.t("關閉", "Off") : "\(Int(snap(haptic, step: 5)))")
-                                .font(.system(size: 13, weight: .semibold)).monospacedDigit().frame(width: 84, alignment: .trailing)
-                        }
-                    }
-                }
             } else {
                 Card {
                     HStack(spacing: 12) {
@@ -804,6 +852,14 @@ struct DevicePage: View {
                         Text(Lang.t("尚未連上滑鼠，無法讀取裝置設定。", "The mouse is not connected, so device settings cannot be read."))
                             .foregroundStyle(.secondary)
                     }
+                }
+            }
+
+            Card(title: Lang.t("切換提示", "On-screen feedback")) {
+                SettingRow(title: Lang.t("在畫面上顯示切換提示", "Show a hint when modes change"),
+                           subtitle: Lang.t("精準模式或滾動模式切換時，在螢幕下方短暫顯示目前狀態。震動在「觸覺回饋」頁設定",
+                                            "Briefly shows the new state at the bottom of the screen; the matching tap is set on the Haptics page")) {
+                    Toggle("", isOn: $model.config.showModeHUD).toggleStyle(.switch).labelsHidden()
                 }
             }
 
@@ -825,21 +881,21 @@ struct DevicePage: View {
     private func load() {
         guard let snapshot = model.snapshot else { return }
         loaded = false
-        if snapshot.dpi > 0 { dpi = Double(snapshot.dpi) }
+        // 精準模式開著時滑鼠回報的是精準速度，滑桿要顯示正常速度。
+        if model.precisionActive, let saved = model.config.device.dpi {
+            dpi = Double(saved)
+        } else if snapshot.dpi > 0 {
+            dpi = Double(snapshot.dpi)
+        }
+        precisionDpi = Double(model.config.precisionDpi)
         freeSpin = snapshot.wheelMode == 1
         autoShift = snapshot.smartShift != 255 && snapshot.smartShift != 0
         if snapshot.smartShift >= 1 && snapshot.smartShift <= 50 { threshold = Double(snapshot.smartShift) }
         inverted = snapshot.wheelInverted
-        haptic = Double(snapshot.hapticLevel)
         DispatchQueue.main.async { loaded = true }
     }
 
     private func snap(_ value: Double, step: Double) -> Double { (value / step).rounded() * step }
-
-    private func applyDpi() {
-        let value = Int(dpi)
-        model.applyDevice("DPI \(value)", { $0.setDpi(value) }) { $0.dpi = value }
-    }
 
     private func applySmartShift() {
         let mode = freeSpin ? 1 : 2
@@ -854,10 +910,133 @@ struct DevicePage: View {
         let value = inverted
         model.applyDevice(Lang.t("捲動方向", "Scroll direction"), { $0.setWheelInvert(value) }) { $0.wheelInvert = value }
     }
+}
+
+// MARK: - 觸覺回饋
+
+struct HapticsPage: View {
+    @ObservedObject var model: AppModel
+    @State private var haptic = 60.0
+    @State private var loaded = false
+
+    var body: some View {
+        Group {
+            Card(title: Lang.t("觸覺強度", "Strength"),
+                 subtitle: Lang.t("滑鼠本身的震動強度。拉到最左邊為關閉，下方所有震動都會跟著停用",
+                                  "The mouse's own haptic strength. Fully left turns it off, and every tap below with it")) {
+                if let snapshot = model.snapshot, snapshot.hapticPresent {
+                    HStack(spacing: 14) {
+                        Image(systemName: "iphone.radiowaves.left.and.right").foregroundStyle(.secondary)
+                        Slider(value: $haptic, in: 0...100) { editing in
+                            if !editing { haptic = snap(haptic); applyHaptic() }
+                        }
+                        Text(snap(haptic) == 0 ? Lang.t("關閉", "Off") : "\(Int(snap(haptic)))")
+                            .font(.system(size: 13, weight: .semibold)).monospacedDigit().frame(width: 84, alignment: .trailing)
+                    }
+                } else {
+                    HStack(spacing: 12) {
+                        Image(systemName: "computermouse").font(.system(size: 20)).foregroundStyle(.secondary)
+                        Text(Lang.t("尚未連上滑鼠，無法讀取觸覺強度。下方的設定仍可先調整。",
+                                    "The mouse is not connected, so the strength cannot be read. The settings below can still be changed."))
+                            .font(.system(size: 12)).foregroundStyle(.secondary)
+                    }
+                }
+                Divider()
+                SettingRow(title: Lang.t("電量低時暫停震動", "Pause haptics on low battery"),
+                           subtitle: Lang.t("電量在 \(model.config.lowBatteryLevel)% 以下且沒有充電時，下方的震動都不播放（門檻在「進階」頁的「電池」）",
+                                            "Below \(model.config.lowBatteryLevel)% and not charging, none of the taps below play (threshold under Battery on the Advanced page)")) {
+                    Toggle("", isOn: $model.config.lowBatteryHapticPause).toggleStyle(.switch).labelsHidden()
+                }
+            }
+            if model.hapticsPaused {
+                Banner(symbol: "battery.25percent",
+                       text: Lang.t("滑鼠電量低（\(model.snapshot?.batteryPercent ?? 0)%），震動已暫停；充電後自動恢復。「試震」按鈕仍會震。",
+                                    "The mouse battery is low (\(model.snapshot?.batteryPercent ?? 0)%), so haptics are paused until it charges. The Try buttons still play."))
+            }
+
+            Card(title: Lang.t("震動時機", "When to tap"),
+                 subtitle: Lang.t("選擇哪些操作要讓滑鼠輕震一下；每一種都可以挑不同的波形，選了會立刻在滑鼠上震一下",
+                                  "Choose which moments make the mouse tap. Each can use its own waveform; picking one plays it on the mouse")) {
+                HapticEventRow(model: model, symbol: "circle.hexagongrid",
+                               title: Lang.t("Actions Ring 滑過選項", "Actions Ring slices"),
+                               detail: Lang.t("游標移到圓環的另一格時", "As the pointer enters another slice"),
+                               isOn: $model.config.ringHaptic, wave: $model.config.ringHapticWave)
+                Divider()
+                HapticEventRow(model: model, symbol: "hand.draw",
+                               title: Lang.t("手勢方向確定", "Gesture recognized"),
+                               detail: Lang.t("按住手勢鍵滑動、方向判定完成時", "When a thumb-gesture direction is locked in"),
+                               isOn: $model.config.gestureHaptic, wave: $model.config.gestureHapticWave)
+                Divider()
+                HapticEventRow(model: model, symbol: "rectangle.on.rectangle",
+                               title: Lang.t("切換電腦", "Computer switch"),
+                               detail: Lang.t("MX Flow 或「切換到頻道」動作讓滑鼠離開之前", "Right before MX Flow or a Switch-to-channel action moves the mouse away"),
+                               isOn: $model.config.flowHaptic, wave: $model.config.flowHapticWave)
+                Divider()
+                HapticEventRow(model: model, symbol: "scope",
+                               title: Lang.t("模式切換", "Mode changes"),
+                               detail: Lang.t("精準模式開關、段落／自由滾動切換時", "Precision mode on or off, ratchet / free spin"),
+                               isOn: $model.config.modeHaptic, wave: $model.config.modeHapticWave)
+            }
+
+            HStack {
+                Text(model.deviceMessage.isEmpty
+                     ? Lang.t("震動由滑鼠播放，強度依上方設定；滑鼠沒有連上時不會震。", "Taps are played by the mouse at the strength above, and only while it is connected.")
+                     : model.deviceMessage)
+                    .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                Spacer()
+                Button(Lang.t("重新讀取", "Reload")) { loaded = false; model.refreshDevice() }.controlSize(.small)
+            }
+            .padding(.horizontal, 4)
+        }
+        .onAppear { loaded = false; model.refreshDevice(); load() }
+        .onChange(of: model.snapshot?.raw) { load() }
+    }
+
+    private func load() {
+        guard let snapshot = model.snapshot else { return }
+        loaded = false
+        haptic = Double(snapshot.hapticLevel)
+        DispatchQueue.main.async { loaded = true }
+    }
+
+    private func snap(_ value: Double) -> Double { (value / 5).rounded() * 5 }
 
     private func applyHaptic() {
         let value = Int(haptic)
-        model.applyDevice(Lang.t("觸覺回饋", "Haptic feedback"), { $0.setHaptic(value) }) { $0.haptic = value }
+        model.applyDevice(Lang.t("觸覺強度", "Haptic strength"), { $0.setHaptic(value) }) { $0.haptic = value }
+    }
+}
+
+// 一種震動時機：圖示、名稱與說明，右邊是波形、試震與開關。
+struct HapticEventRow: View {
+    @ObservedObject var model: AppModel
+    let symbol: String
+    let title: String
+    let detail: String
+    @Binding var isOn: Bool
+    @Binding var wave: Int
+
+    var body: some View {
+        HStack(spacing: 12) {
+            Image(systemName: symbol).font(.system(size: 15)).foregroundStyle(Color.accentColor)
+                .frame(width: 32, height: 32)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.accentColor.opacity(0.12)))
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.system(size: 13))
+                Text(detail).font(.system(size: 11.5)).foregroundStyle(.secondary)
+            }
+            Spacer(minLength: 8)
+            Group {
+                Picker("", selection: $wave) {
+                    ForEach(HapticWave.all) { Text($0.title).tag($0.id) }
+                }
+                .labelsHidden().frame(width: 140)
+                Button(Lang.t("試震", "Try")) { model.hidpp.playHaptic(UInt8(clamping: wave)) }
+            }
+            .disabled(!isOn).opacity(isOn ? 1 : 0.45)
+            Toggle("", isOn: $isOn).toggleStyle(.switch).labelsHidden()
+        }
+        .onChange(of: wave) { model.hidpp.playHaptic(UInt8(clamping: wave)) }
     }
 }
 
@@ -982,6 +1161,7 @@ struct PermissionRow: View {
     let title: String
     let detail: String
     let granted: Bool
+    var buttonTitle = Lang.t("開啟設定", "Open Settings")
     let action: () -> Void
 
     var body: some View {
@@ -990,7 +1170,7 @@ struct PermissionRow: View {
                 Label(Lang.t("已允許", "Granted"), systemImage: "checkmark.circle.fill")
                     .font(.system(size: 12, weight: .medium)).foregroundStyle(.green)
             } else {
-                Button(Lang.t("開啟設定", "Open Settings"), action: action)
+                Button(buttonTitle, action: action)
             }
         }
     }
@@ -1021,7 +1201,27 @@ struct AdvancedPage: View {
             }
         }
 
-        Card(title: Lang.t("權限", "Permissions"), subtitle: Lang.t("都在「系統設定 → 隱私權與安全性」裡管理", "Both are managed in System Settings → Privacy & Security")) {
+        Card(title: Lang.t("電池", "Battery"),
+             subtitle: Lang.t("電量由滑鼠回報；低於門檻且沒有在充電時才算電量低", "Reported by the mouse; low means below the threshold while not charging")) {
+            SettingRow(title: Lang.t("低電量提醒", "Low-battery alert"),
+                       subtitle: Lang.t("電量降到門檻時發出一次系統通知；充電後再降下來才會再提醒",
+                                        "Sends one system notification when the level drops to the threshold; it alerts again only after charging")) {
+                Toggle("", isOn: $model.config.lowBatteryAlert).toggleStyle(.switch).labelsHidden()
+                    .onChange(of: model.config.lowBatteryAlert) { model.batterySettingsChanged() }
+            }
+            Divider()
+            SettingRow(title: Lang.t("電量低的門檻", "Low-battery threshold"),
+                       subtitle: Lang.t("也用於「觸覺回饋」頁的低電量暫停震動", "Also used by the low-battery haptics pause on the Haptics page")) {
+                Picker("", selection: $model.config.lowBatteryLevel) {
+                    ForEach(Config.lowBatteryLevels, id: \.self) { Text(verbatim: "\($0)%").tag($0) }
+                }
+                .labelsHidden().frame(width: 120)
+                .onChange(of: model.config.lowBatteryLevel) { model.batterySettingsChanged() }
+            }
+        }
+
+        Card(title: Lang.t("權限", "Permissions"), subtitle: Lang.t("輸入監控與輔助使用在「系統設定 → 隱私權與安全性」，通知在「系統設定 → 通知」",
+                                                                   "In System Settings: the first two under Privacy & Security, notifications under Notifications")) {
             PermissionRow(title: Lang.t("輸入監控", "Input Monitoring"),
                           detail: Lang.t("與滑鼠通訊：專用按鍵、電量、裝置設定", "Talks to the mouse: special buttons, battery, device settings"),
                           granted: model.status != .needsInputMonitoring) { model.openInputMonitoringSettings() }
@@ -1032,7 +1232,15 @@ struct AdvancedPage: View {
                 model.requestAccessibility()
                 model.openAccessibilitySettings()
             }
+            Divider()
+            PermissionRow(title: Lang.t("通知", "Notifications"),
+                          detail: Lang.t("低電量提醒用；不允許時改在螢幕下方提示", "For low-battery alerts; without it a hint shows at the bottom of the screen instead"),
+                          granted: [.authorized, .provisional].contains(model.notificationStatus),
+                          buttonTitle: model.notificationStatus == .notDetermined ? Lang.t("允許通知", "Allow") : Lang.t("開啟設定", "Open Settings")) {
+                model.requestNotifications()
+            }
         }
+        .onAppear { model.refreshNotificationStatus() }
 
         Card(title: Lang.t("工程模式", "Engineering mode"), subtitle: Lang.t("檢視滑鼠事件，方便回報問題", "Inspect mouse events when reporting a problem")) {
             HStack(spacing: 8) {

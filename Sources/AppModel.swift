@@ -1,10 +1,11 @@
 import AppKit
 import Combine
 import ServiceManagement
+import UserNotifications
 
 // 全部的執行期狀態與輸入處理邏輯；只在主執行緒使用。
 final class AppModel: ObservableObject {
-    static let version = "2.1"
+    static let version = "2.2"
 
     @Published var config: Config { didSet { configChanged() } }
     @Published var status: DeviceStatus = .searching
@@ -20,11 +21,14 @@ final class AppModel: ObservableObject {
     @Published var hosts: [HostEntry] = []
     @Published var currentHost = -1
     @Published var displayCount = EdgeGeometry.displays().count
+    @Published var precisionActive = false
+    @Published var notificationStatus: UNAuthorizationStatus = .notDetermined
 
     let hidpp = HIDPP()
     private let tap = EventTap()
     private let ring = RingOverlay()
     private let hud = GestureHUD()
+    private let modeHUD = ModeHUD()
     private var timers: [Timer] = []
 
     // 圓環與手勢的進行狀態
@@ -52,6 +56,14 @@ final class AppModel: ObservableObject {
     private var heldInputs = Set<String>()     // 目前按著的一般滑鼠按鍵（中鍵、側鍵）
     private var deferredInput: MouseInput?     // 被選為切換按鍵的按鍵：動作延到放開時才執行
 
+    // 精準模式：開啟時把 DPI 暫時降到 config.precisionDpi，關閉時寫回原本的速度。
+    private var precisionNormalDpi = 0
+    private var precisionHeldBy: MouseInput?   // 由「按住」觸發時是哪顆鍵；放開它就恢復
+
+    // 低電量：每次電量降到門檻以下只通知一次；充電或回到門檻之上（多 3%）後才會再通知。
+    private var lowBatteryNotified = false
+    private let notifier = BatteryNotifier()
+
     init() {
         config = Config.load()
         Lang.load(config.language)
@@ -69,8 +81,9 @@ final class AppModel: ObservableObject {
         hidpp.onLog = { [weak self] in self?.log($0) }
         ring.onSlotEnter = { [weak self] _ in
             guard let self, self.config.ringHaptic else { return }
-            self.hidpp.playHaptic(UInt8(clamping: self.config.ringHapticWave))
+            self.playHaptic(self.config.ringHapticWave)
         }
+        ActionRunner.mouseAction = { [weak self] action in self?.runMouseAction(action) ?? false }
         hidpp.onStatus = { [weak self] in self?.status = $0 }
         hidpp.onButton = { [weak self] cid, down in self?.vendorButton(cid, down) }
         hidpp.onReady = { [weak self] in
@@ -81,6 +94,7 @@ final class AppModel: ObservableObject {
         hidpp.onBattery = { [weak self] percent, charging in
             self?.snapshot?.batteryPercent = percent
             self?.snapshot?.charging = charging
+            self?.batteryChanged()
         }
         if CommandLine.arguments.contains("--log") { setLogging(true) }
         hidpp.start()
@@ -113,6 +127,11 @@ final class AppModel: ObservableObject {
     }
 
     func shutdown() {
+        // 精準模式開著就結束的話，先把速度寫回去。
+        if precisionActive, precisionNormalDpi > 0 {
+            let dpi = precisionNormalDpi
+            hidpp.performNow { _ = $0.setDpi(dpi) }
+        }
         for monitor in moveMonitors { NSEvent.removeMonitor(monitor) }
         moveMonitors.removeAll()
         tap.remove()
@@ -145,6 +164,7 @@ final class AppModel: ObservableObject {
         if !value {
             cancelRing()
             cancelGesture()
+            if precisionActive { setPrecision(false) }
         }
         hidpp.setEnabled(value)
     }
@@ -176,7 +196,27 @@ final class AppModel: ObservableObject {
         }
     }
 
+    // 通知權限：「進階」頁的權限卡片用。還沒問過就跳系統詢問，拒絕過就開系統設定的通知頁。
+    func refreshNotificationStatus() {
+        notifier.status { [weak self] status in
+            if self?.notificationStatus != status { self?.notificationStatus = status }
+        }
+    }
+
+    func requestNotifications() {
+        if notificationStatus == .notDetermined {
+            notifier.request { [weak self] granted in
+                self?.log("Notification permission granted=\(granted)")
+                self?.refreshNotificationStatus()
+            }
+        } else if let id = Bundle.main.bundleIdentifier,
+                  let url = URL(string: "x-apple.systempreferences:com.apple.Notifications-Settings.extension?id=" + id) {
+            NSWorkspace.shared.open(url)
+        }
+    }
+
     private func installTapIfPossible() {
+        refreshNotificationStatus()
         let now = AXIsProcessTrusted()
         if now != trusted { trusted = now }
         let running = HIDPP.optionsPlusRunning
@@ -202,9 +242,15 @@ final class AppModel: ObservableObject {
 
     private func deviceReady() {
         buttonState.removeAll()
+        // 重新連線時會把儲存的速度寫回去，精準模式就此結束。
+        precisionActive = false
+        precisionHeldBy = nil
         hidpp.restore(config.device) { [weak self] snapshot, results in
             guard let self else { return }
-            if let snapshot { self.snapshot = snapshot }
+            if let snapshot {
+                self.snapshot = snapshot
+                self.batteryChanged()
+            }
             for line in snapshot?.raw ?? [] { self.log("Device " + line) }
             for line in results { self.log("Device " + line) }
             if results.contains(where: { $0.hasSuffix("verified=false") }) {
@@ -217,8 +263,17 @@ final class AppModel: ObservableObject {
 
     func refreshDevice() {
         hidpp.readDevice { [weak self] snapshot in
-            if let snapshot { self?.snapshot = snapshot }
+            guard let snapshot else { return }
+            self?.snapshot = snapshot
+            self?.batteryChanged()
         }
+    }
+
+    // 設定頁改了指標速度：那就是新的正常速度，精準模式結束。
+    func applyDpi(_ value: Int) {
+        precisionActive = false
+        precisionHeldBy = nil
+        applyDevice("DPI \(value)", { $0.setDpi(value) }) { $0.dpi = value }
     }
 
     // 套用一項裝置設定；滑鼠回讀確認後才寫進設定檔。
@@ -250,6 +305,7 @@ final class AppModel: ObservableObject {
             }
             self.hosts = hosts
             self.currentHost = current
+            ActionCatalog.hostNames = Dictionary(uniqueKeysWithValues: hosts.map { ($0.index, $0.name) })
         }
     }
 
@@ -273,7 +329,12 @@ final class AppModel: ObservableObject {
         cancelRing()
         cancelGesture()
         log("Switch host -> \(host) (\(reason))")
-        hidpp.changeHost(host) { [weak self] sent in
+        if precisionActive {
+            // 滑鼠要離開了，速度先恢復，免得在另一台電腦上停在精準速度。
+            setPrecision(false, quiet: true)
+        }
+        let haptic: UInt8? = config.flowHaptic && !hapticsPaused ? UInt8(clamping: config.flowHapticWave) : nil
+        hidpp.changeHost(host, haptic: haptic) { [weak self] sent in
             self?.log("Switch host sent=\(sent)")
         }
     }
@@ -359,6 +420,10 @@ final class AppModel: ObservableObject {
     // 分不出是從哪一台切回來的，設定了多個邊緣就不移動；電腦剛喚醒時的重新連線也不移動。
     private func mouseArrived() {
         refreshHosts()
+        // 用圓環點選切走時，放開事件送不到這台；回來時別再吃掉下一次放開。
+        swallowLeftUp = false
+        swallowRightUp = false
+        swallowedButtons.removeAll()
         let settings = config.edgeSwitch
         let now = Date()
         guard enabled, settings.enabled, settings.placeCursor, !sleeping,
@@ -413,6 +478,10 @@ final class AppModel: ObservableObject {
 
     // 專用鍵當一般按鍵用：按下就執行。被選為切換按鍵時改在放開時執行，切換了就不執行。
     private func clickMapped(_ input: MouseInput, _ down: Bool) {
+        if mapping(input).action == .precisionHold {
+            holdPrecision(input, down)
+            return
+        }
         if isEdgeKey(input) {
             if down {
                 deferredInput = input
@@ -454,9 +523,11 @@ final class AppModel: ObservableObject {
     private func trackGesture() {
         let location = NSEvent.mouseLocation
         let dx = location.x - gestureStart.x, dy = location.y - gestureStart.y
-        if abs(dx) > 8 || abs(dy) > 8 { gestureMoved = true }
+        // 距離隨「手勢靈敏度」縮放；50% 時是原本的 8pt／65pt。
+        let factor = config.gestureDistanceFactor
+        if abs(dx) > 8 * factor || abs(dy) > 8 * factor { gestureMoved = true }
         // 方向一旦鎖定就不再變，避免放開前游標回彈改變結果。
-        guard gestureDirection < 0, max(abs(dx), abs(dy)) >= 65 else { return }
+        guard gestureDirection < 0, max(abs(dx), abs(dy)) >= 65 * factor else { return }
         if abs(dx) >= abs(dy) * 1.35 {
             gestureDirection = dx > 0 ? 1 : 3
         } else if abs(dy) >= abs(dx) * 1.35 {
@@ -465,6 +536,7 @@ final class AppModel: ObservableObject {
             return
         }
         hud.update(config.gestures[gestureDirection].title)
+        if config.gestureHaptic { playHaptic(config.gestureHapticWave) }
     }
 
     private func finishGesture() {
@@ -540,6 +612,10 @@ final class AppModel: ObservableObject {
         if logging { log("Tap \(event.rawValue)") }
         if binding.isPassThrough { return false }
         swallowedButtons.insert(input.rawValue)
+        if binding.action == .precisionHold {
+            holdPrecision(input, true)
+            return true
+        }
         if isEdgeKey(input) {
             deferredInput = input
             return true
@@ -554,6 +630,7 @@ final class AppModel: ObservableObject {
     // 按下被吃掉的話，對應的放開也要吃掉，否則 App 會收到落單的放開事件。
     private func buttonUp(_ input: MouseInput) -> Bool {
         heldInputs.remove(input.rawValue)
+        if precisionHeldBy == input { holdPrecision(input, false) }
         if deferredInput == input {
             deferredInput = nil
             DispatchQueue.main.async { [weak self] in self?.runMapped(input) }
@@ -573,6 +650,168 @@ final class AppModel: ObservableObject {
             }
         }
         return true
+    }
+
+    // MARK: - 精準模式與滾動模式
+
+    // 從選單動作執行（圓環、手勢、拇指滾輪或按鍵的一般執行）。
+    private func runMouseAction(_ action: MappedAction) -> Bool {
+        switch action {
+        case .precisionHold, .precisionToggle:
+            precisionHeldBy = nil
+            return setPrecision(!precisionActive)
+        case .wheelModeToggle:
+            return toggleWheelMode()
+        case .hostChannel1, .hostChannel2, .hostChannel3:
+            return switchToChannel(action.hostChannel ?? 0)
+        default:
+            return false
+        }
+    }
+
+    // 圓環、手勢或按鍵執行「切換到頻道 N」。已經在那個頻道或滑鼠沒就緒時不做事。
+    private func switchToChannel(_ channel: Int) -> Bool {
+        guard case .ready = status else { return false }
+        if channel == currentHost {
+            log("Switch host -> \(channel) skipped (already on this channel)")
+            return false
+        }
+        if let host = hosts.first(where: { $0.index == channel }), !host.paired {
+            log("Switch host -> \(channel) skipped (channel not paired)")
+            return false
+        }
+        switchHost(channel, reason: "action")
+        return true
+    }
+
+    private func holdPrecision(_ input: MouseInput, _ down: Bool) {
+        if down {
+            guard precisionHeldBy == nil else { return }
+            if setPrecision(true) { precisionHeldBy = input }
+            log("Precision hold \(input.rawValue) down active=\(precisionActive)")
+        } else if precisionHeldBy == input {
+            precisionHeldBy = nil
+            setPrecision(false)
+            log("Precision hold \(input.rawValue) up")
+        }
+    }
+
+    // 狀態立刻改，寫入照順序排在 HID++ 佇列上；按一下馬上放開也會先降再升。
+    @discardableResult
+    func setPrecision(_ on: Bool, quiet: Bool = false) -> Bool {
+        guard on != precisionActive else { return true }
+        if on {
+            guard case .ready = status, let snapshot, snapshot.dpi > 0 else { return false }
+            let normal = config.device.dpi ?? snapshot.dpi
+            // 存下正常速度：程式中途結束時，下次啟動或重新連線會把它寫回去。
+            if config.device.dpi == nil { config.device.dpi = normal }
+            let low = snapshot.dpiMax > 0 ? min(max(config.precisionDpi, snapshot.dpiMin), snapshot.dpiMax) : config.precisionDpi
+            precisionNormalDpi = normal
+            precisionActive = true
+            hidpp.write({ $0.setDpi(low) }) { [weak self] ok in
+                self?.log("Precision on DPI \(low) verified=\(ok)")
+            }
+            if !quiet {
+                showModeHUD("scope", Lang.t("精準模式", "Precision mode"), "\(low) DPI")
+                playModeHaptic()
+            }
+        } else {
+            let normal = precisionNormalDpi
+            precisionActive = false
+            precisionHeldBy = nil
+            hidpp.write({ $0.setDpi(normal) }) { [weak self] ok in
+                self?.log("Precision off DPI \(normal) verified=\(ok)")
+            }
+            if !quiet {
+                showModeHUD("cursorarrow.motionlines", Lang.t("指標速度已恢復", "Pointer speed restored"), "\(normal) DPI")
+                playModeHaptic()
+            }
+        }
+        return true
+    }
+
+    private func toggleWheelMode() -> Bool {
+        guard case .ready = status else { return false }
+        hidpp.perform({ $0.toggleWheelMode() }) { [weak self] result in
+            guard let self else { return }
+            guard let result else {
+                self.log("Wheel mode toggle failed")
+                return
+            }
+            self.log("Wheel mode -> \(result.mode) threshold=\(result.threshold)")
+            self.config.device.wheelMode = result.mode
+            self.config.device.smartShift = result.threshold
+            self.snapshot?.wheelMode = result.mode
+            if result.mode == 1 {
+                self.showModeHUD("infinity", Lang.t("自由滾動", "Free spin"), Lang.t("滾輪無阻力", "No resistance"))
+            } else {
+                self.showModeHUD("dial.medium", Lang.t("段落滾動", "Ratchet"), Lang.t("一格一格", "Step by step"))
+            }
+            self.playModeHaptic()
+        }
+        return true
+    }
+
+    private func showModeHUD(_ symbol: String, _ title: String, _ detail: String) {
+        if config.showModeHUD { modeHUD.show(symbol: symbol, title: title, detail: detail) }
+    }
+
+    private func playModeHaptic() {
+        if config.modeHaptic { playHaptic(config.modeHapticWave) }
+    }
+
+    // MARK: - 觸覺回饋與電量
+
+    // 低電量暫停震動：電量在門檻以下且沒有充電時，所有自動的震動都不送（「試震」按鈕不受影響）。
+    var hapticsPaused: Bool {
+        guard config.lowBatteryHapticPause, let snapshot, snapshot.batteryPercent >= 0 else { return false }
+        return !snapshot.charging && snapshot.batteryPercent <= config.lowBatteryLevel
+    }
+
+    private func playHaptic(_ wave: Int) {
+        guard !hapticsPaused else { return }
+        hidpp.playHaptic(UInt8(clamping: wave))
+    }
+
+    // 電量有更新時呼叫（滑鼠主動通知或讀取裝置）。
+    private func batteryChanged() {
+        guard let snapshot, snapshot.batteryPercent >= 0 else { return }
+        let percent = snapshot.batteryPercent
+        if snapshot.charging || percent > config.lowBatteryLevel + 3 {
+            lowBatteryNotified = false
+            return
+        }
+        guard percent <= config.lowBatteryLevel, !lowBatteryNotified else { return }
+        lowBatteryNotified = true
+        log("Battery low: \(percent)% (threshold \(config.lowBatteryLevel)%)" + (hapticsPaused ? "; haptics paused" : ""))
+        guard config.lowBatteryAlert else { return }
+        let title = Lang.t("MX Master 4 電量低", "MX Master 4 battery low")
+        let body = Lang.t("剩 \(percent)%，請盡快充電。", "\(percent)% left. Charge it soon.")
+            + (hapticsPaused ? Lang.t("充電前震動會暫停。", " Haptics are paused until it charges.") : "")
+        notifier.post(title: title, body: body) { [weak self] delivered in
+            // 系統通知被關掉時，至少在螢幕下方提示一次。
+            if !delivered { self?.modeHUD.show(symbol: "battery.25percent", title: title, detail: "\(percent)%") }
+            self?.log("Battery low notification delivered=\(delivered)")
+        }
+    }
+
+    // 「指標與滾輪」頁改了門檻或開關後，重新判斷一次（不會重複通知）。
+    func batterySettingsChanged() {
+        if let percent = snapshot?.batteryPercent, percent > config.lowBatteryLevel + 3 { lowBatteryNotified = false }
+        batteryChanged()
+    }
+
+    // 「指標與滾輪」頁的觸發按鍵：哪一顆鍵目前設成「精準模式（按住）」。
+    var precisionTrigger: MouseInput? {
+        MouseInput.allCases.first { mapping($0).action == .precisionHold }
+    }
+
+    func setPrecisionTrigger(_ input: MouseInput?) {
+        // 一次只留一顆；原本那顆回到預設動作。
+        for other in MouseInput.allCases where other != input && mapping(other).action == .precisionHold {
+            config.mappings[other.rawValue] = Config.defaultMappings[other] ?? ActionBinding(.passThrough)
+        }
+        if let input { config.mappings[input.rawValue] = ActionBinding(.precisionHold) }
     }
 
     // MARK: - 工程記錄
@@ -624,5 +863,47 @@ final class AppModel: ObservableObject {
     var batteryText: String {
         guard let snapshot, snapshot.batteryPercent >= 0 else { return "" }
         return "\(snapshot.batteryPercent)%" + (snapshot.charging ? Lang.t("（充電中）", " (charging)") : "")
+    }
+}
+
+// 低電量的系統通知。第一次要送時才請使用者允許；不允許或送不出去時回報 false。
+final class BatteryNotifier: NSObject, UNUserNotificationCenterDelegate {
+    private var center: UNUserNotificationCenter? {
+        // 沒有 Bundle 的執行方式（例如直接跑執行檔）會讓 current() 當掉。
+        Bundle.main.bundleIdentifier == nil ? nil : UNUserNotificationCenter.current()
+    }
+
+    func status(_ completion: @escaping (UNAuthorizationStatus) -> Void) {
+        guard let center else { return completion(.denied) }
+        center.getNotificationSettings { settings in
+            DispatchQueue.main.async { completion(settings.authorizationStatus) }
+        }
+    }
+
+    func request(_ completion: @escaping (Bool) -> Void) {
+        guard let center else { return completion(false) }
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            DispatchQueue.main.async { completion(granted) }
+        }
+    }
+
+    func post(title: String, body: String, completion: @escaping (Bool) -> Void) {
+        guard let center else { return completion(false) }
+        center.delegate = self
+        center.requestAuthorization(options: [.alert, .sound]) { granted, _ in
+            guard granted else { return DispatchQueue.main.async { completion(false) } }
+            let content = UNMutableNotificationContent()
+            content.title = title
+            content.body = body
+            content.sound = .default
+            let request = UNNotificationRequest(identifier: "lowBattery", content: content, trigger: nil)
+            center.add(request) { error in DispatchQueue.main.async { completion(error == nil) } }
+        }
+    }
+
+    // 設定視窗在前景時也顯示橫幅。
+    func userNotificationCenter(_ center: UNUserNotificationCenter, willPresent notification: UNNotification,
+                                withCompletionHandler completionHandler: @escaping (UNNotificationPresentationOptions) -> Void) {
+        completionHandler([.banner, .sound])
     }
 }

@@ -10,7 +10,7 @@
 
 MX Master Mac is a lightweight macOS utility for the Logitech MX Master 4. It lives in the menu bar and lets you customize buttons, thumb gestures and the Actions Ring, and adjust pointer speed, SmartShift, scroll direction and haptic feedback, without Logi Options+. Version 2.0 adds **MX Flow**: push the pointer against a screen edge and the mouse moves to another computer. It is the macOS edition of the same product as [MX Master Win](https://github.com/stone5202/MXMasterWin) for Windows (formerly MX Master Portable), with the same features and the same way of setting them up, rewritten in Swift. Run one edition on each computer and MX Flow takes the mouse back and forth between Mac and Windows.
 
-> Current version: 2.1 · Interface languages: Traditional Chinese, English (follows the system by default)
+> Current version: 2.2 · Interface languages: Traditional Chinese, English (follows the system by default)
 
 See the [changelog](CHANGELOG.en.md) or [GitHub Releases](https://github.com/stone5202/MXMasterMac/releases) for what changed in each version.
 
@@ -40,6 +40,16 @@ See the [changelog](CHANGELOG.en.md) or [GitHub Releases](https://github.com/sto
   MX Flow
 </p>
 
+<p align="center">
+  <img src="docs/screenshots/haptics.en.png" width="45%" alt="Haptics page">
+  &nbsp;
+  <img src="docs/screenshots/advanced.en.png" width="45%" alt="Advanced page: battery and permissions">
+</p>
+
+<p align="center">
+  Haptics · Advanced (battery)
+</p>
+
 ## Download and use
 
 1. Download `MXMasterMac.zip` from [Releases](https://github.com/stone5202/MXMasterMac/releases/latest), unzip it and drag `MX Master Mac.app` to Applications.
@@ -52,10 +62,13 @@ Quit Logi Options+ first: running both makes them overwrite each other's button 
 ## Features
 
 - **Button mapping**: middle button, gesture button, both side buttons, thumb wheel left and right, and the Actions Ring button each get their own action.
-- **Built-in actions**: about 50, including back / forward, Mission Control, App Exposé, Show Desktop, switch desktop, switch app, copy / paste / cut, undo / redo, select all / save / find, play / pause, previous / next track, volume and mute, tabs (new / close / reopen / refresh / zoom), windows (minimize / close / full screen), Spotlight, screenshot, emoji, lock screen, Finder, System Settings, Calculator, Activity Monitor, type today's date or the current time, Enter, Esc, Delete, and "MX Settings", which opens this app's settings window.
+- **Built-in actions**: about 55, including back / forward, Mission Control, App Exposé, Show Desktop, switch desktop, switch app, copy / paste / cut, undo / redo, select all / save / find, play / pause, previous / next track, volume and mute, tabs (new / close / reopen / refresh / zoom), windows (minimize / close / full screen), Spotlight, screenshot, emoji, lock screen, Finder, System Settings, Calculator, Activity Monitor, type today's date or the current time, Enter, Esc, Delete, "MX Settings", which opens this app's settings window, plus precision mode (hold / toggle), toggle ratchet / free spin, and switch to channel 1 / 2 / 3 (Easy-Switch).
 - **Custom actions**: record any key combination, or open an app, file, folder or URL.
-- **Actions Ring**: all eight positions are customizable. Choose hold mode (hold to show, move to choose, release to run) or click mode (press once to show, then click). Two looks, Ring and Bubbles, in dark or white, with adjustable size and opacity. The mouse taps lightly as the pointer moves onto another slice (can be turned off; six waveforms to choose from).
-- **Four-way thumb gestures**: hold the gesture button and swipe; all four directions are customizable.
+- **Actions Ring**: all eight positions are customizable. Choose hold mode (hold to show, move to choose, release to run) or click mode (press once to show, then click). Two looks, Ring and Bubbles, in dark or white, with adjustable size and opacity. The mouse taps lightly as the pointer moves onto another slice (turn it off or change the waveform on the Haptics page).
+- **Four-way thumb gestures**: hold the gesture button and swipe; all four directions and the sensitivity are customizable.
+- **Haptics**: set the mouse's haptic strength and four haptic moments separately: ring slices, gesture recognized, before a computer switch, and mode changes. Each can be switched on or off, given one of six waveforms and tried.
+- **Precision mode**: hold the chosen button to drop the pointer to a slower DPI (400 by default) for detailed work such as photo editing or alignment; release to go back. It can also be toggled from the ring or a gesture. When precision mode or ratchet / free spin changes, the new state shows briefly at the bottom of the screen.
+- **Battery** (Advanced page): one system notification when the level drops to the threshold (15% by default) while not charging, and haptics can pause automatically to save power.
 - **Device settings**: shows battery level and firmware version; adjusts pointer speed (DPI), SmartShift, scroll direction and haptic strength. Applied values are saved and re-applied when the mouse reconnects.
 - **MX Flow**: keep pushing the pointer against a screen edge and the mouse moves to the Easy-Switch channel you chose (another computer). Each of the four edges can target its own channel, the trigger time is adjustable, and a held keyboard key or mouse button can be required; with several displays only the outer edge of the outermost display triggers. The page also lists the computer stored on each of the three channels, with a button to switch directly; the menu bar menu has an MX Flow switch as well.
 - **Recovers after a connection change**: when the mouse goes to another computer and comes back, or switches between Bluetooth and Logi Bolt, the special buttons are re-enabled automatically.
@@ -71,6 +84,7 @@ Quit Logi Options+ first: running both makes them overwrite each other's button 
 
 - **Input Monitoring**: talks to the mouse through the built-in macOS HID interface (special buttons, battery, device settings).
 - **Accessibility**: sends shortcuts and intercepts the side buttons and thumb wheel.
+- **Notifications** (optional): low-battery alerts. Can be allowed in advance on the Advanced page; without it a hint shows at the bottom of the screen instead.
 
 ## Known limitations
 
@@ -88,7 +102,7 @@ Quit Logi Options+ first: running both makes them overwrite each other's button 
 
 - Special buttons (gesture button `0x00C3`, Actions Ring button `0x01A0`): through `IOHIDManager`, HID++ 2.0 feature `0x1B04` sets temporary diversion and the app receives the button notifications. Diversion is released when the app is paused or quits.
 - Standard buttons and the horizontal wheel: intercepted with a `CGEventTap`; keyboard actions are posted with `CGEvent`.
-- Device settings: HID++ features `0x1004` (battery), `0x0003` (firmware), `0x2201` (DPI), `0x2111` (SmartShift), `0x2121` (scroll direction), `0x19B0` (haptics). Every write is read back.
+- Device settings: HID++ features `0x1004` (battery), `0x0003` (firmware), `0x2201` (DPI), `0x2111` (SmartShift), `0x2121` (scroll direction), `0x19B0` (haptic strength and waveform playback). Every write is read back. Precision mode temporarily writes a lower DPI and restores the original speed on release, pause, quit, or before switching to another computer.
 - MX Flow: `NSEvent` monitors watch pointer movement to tell when the pointer is held against the outer edge of the outermost display; the switch is sent with HID++ feature `0x1814` (Change Host), and `0x1815` reads the host name stored on each channel.
 - Reconnect detection: `0x1D4B` notifications, device arrival / removal, and system wake; while disconnected it retries every 3 seconds.
 

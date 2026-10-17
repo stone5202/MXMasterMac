@@ -453,10 +453,20 @@ final class HIDPP {
 
     // 在 work 佇列執行寫入，完成後在主執行緒回報是否經裝置回讀確認。
     func write(_ operation: @escaping (HIDPP) -> Bool, completion: @escaping (Bool) -> Void) {
+        perform({ $0.device != nil && operation($0) ? true : nil }) { completion($0 ?? false) }
+    }
+
+    // 在 work 佇列執行一項裝置操作，結果在主執行緒交回；沒連上滑鼠時是 nil。
+    func perform<T>(_ operation: @escaping (HIDPP) -> T?, completion: @escaping (T?) -> Void) {
         work.async { [weak self] in
-            let ok = self.map { $0.device != nil && operation($0) } ?? false
-            DispatchQueue.main.async { completion(ok) }
+            let result = self.flatMap { $0.device != nil ? operation($0) : nil }
+            DispatchQueue.main.async { completion(result) }
         }
+    }
+
+    // 結束程式前用：等寫入做完才返回。
+    func performNow(_ operation: (HIDPP) -> Void) {
+        work.sync { if device != nil { operation(self) } }
     }
 
     // 把儲存的裝置設定寫回滑鼠；只寫與滑鼠回報不同的項目。
@@ -529,12 +539,16 @@ final class HIDPP {
 
     // 把滑鼠切到另一個頻道。滑鼠會立刻離開這台電腦，有時來不及回覆，所以送出就算完成；
     // 對方連不上時滑鼠可能自己回來，之後由定時重試接回。
-    func changeHost(_ host: Int, completion: @escaping (Bool) -> Void) {
+    // haptic：切換前先讓滑鼠震一下的波形（在同一個佇列上先送，確定震完才離開）。
+    func changeHost(_ host: Int, haptic: UInt8? = nil, completion: @escaping (Bool) -> Void) {
         work.async { [weak self] in
             var sent = false
             if let self, self.device != nil, let index = self.findFeature(0x1814),
                let info = self.request(self.deviceIndex, index, 0, [], timeout: 0.9),
                host >= 0, host < Int(info[4]), host != Int(info[5]) {
+                if let haptic, let hapticIndex = self.findFeature(0x19B0) {
+                    _ = self.request(self.deviceIndex, hapticIndex, 4, [haptic], timeout: 0.25)
+                }
                 self.log("change host \(Int(info[5])) -> \(host)")
                 _ = self.request(self.deviceIndex, index, 1, [UInt8(host)], timeout: 0.3)
                 sent = true
@@ -635,6 +649,14 @@ final class HIDPP {
         guard call(0x2111, 2, [UInt8(mode), UInt8(threshold)]) != nil,
               let check = call(0x2111, 1) else { return false }
         return Int(check[4]) == mode && Int(check[5]) == threshold
+    }
+
+    // 段落與自由滾動互換，SmartShift 門檻照讀到的值寫回。成功時回傳新的（模式, 門檻）。
+    func toggleWheelMode() -> (mode: Int, threshold: Int)? {
+        guard let reply = call(0x2111, 1) else { return nil }
+        let mode = reply[4] == 1 ? 2 : 1
+        let threshold = Int(reply[5])
+        return setSmartShift(mode: mode, threshold: threshold) ? (mode, threshold) : nil
     }
 
     // 模式位元組：bit0 = 滾輪改送 HID++ 通知（Options+ 在 macOS 上會開），bit2 = 反轉。

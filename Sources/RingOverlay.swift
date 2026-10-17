@@ -107,7 +107,7 @@ final class RingView: NSView {
 
         var text: String
         if selected >= 0 && selected < slots.count {
-            text = slots[selected].title
+            text = slots[selected].ringTitle
         } else if showNumbers {
             text = ""
         } else {
@@ -173,7 +173,7 @@ final class RingView: NSView {
 
         if slots.indices.contains(selected) {
             // 中央的名稱標籤，寬度跟著文字走。
-            let title = slots[selected].isPassThrough ? Lang.t("未設定", "Not set") : slots[selected].title
+            let title = slots[selected].isPassThrough ? Lang.t("未設定", "Not set") : slots[selected].ringTitle
             let font = NSFont.systemFont(ofSize: 14 * scale, weight: .semibold)
             let width = min((title as NSString).size(withAttributes: [.font: font]).width + 30 * scale, 150 * scale)
             let pill = NSRect(x: center.x - width / 2, y: center.y - 17 * scale, width: width, height: 34 * scale)
@@ -209,7 +209,7 @@ final class RingView: NSView {
             image.draw(in: NSRect(x: point.x - size.width / 2, y: point.y - size.height / 2 + 9 * scale,
                                   width: size.width, height: size.height))
         }
-        let title = dimmed ? Lang.t("未設定", "Not set") : binding.title
+        let title = dimmed ? Lang.t("未設定", "Not set") : binding.ringTitle
         drawText(title, in: NSRect(x: point.x - 46 * scale, y: point.y - 26 * scale, width: 92 * scale, height: 16 * scale),
                  size: 10.5 * scale, weight: .regular, vertical: false, color: color)
 
@@ -381,4 +381,84 @@ final class GestureHUD {
 
     func update(_ text: String) { label.stringValue = text }
     func hide() { panel.orderOut(nil) }
+}
+
+// 精準模式、滾動模式切換時，在游標所在螢幕的下方短暫顯示目前狀態（類似系統音量提示）。
+final class ModeHUD {
+    private let panel: NSPanel
+    private let background = NSVisualEffectView()
+    private let icon = NSImageView()
+    private let title = NSTextField(labelWithString: "")
+    private let detail = NSTextField(labelWithString: "")
+    private var hideWork: DispatchWorkItem?
+
+    init() {
+        panel = NSPanel(contentRect: NSRect(x: 0, y: 0, width: 240, height: 58),
+                        styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = true
+        panel.level = .popUpMenu
+        panel.ignoresMouseEvents = true
+        panel.hidesOnDeactivate = false
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
+        background.material = .hudWindow
+        background.state = .active
+        // 圓角要用 maskImage：圖層的 cornerRadius 裁不掉毛玻璃材質，角落會留下白邊。
+        background.maskImage = ModeHUD.roundedMask(radius: 16)
+        icon.symbolConfiguration = .init(pointSize: 20, weight: .semibold)
+        icon.contentTintColor = .controlAccentColor
+        title.font = .systemFont(ofSize: 13.5, weight: .semibold)
+        detail.font = .systemFont(ofSize: 11.5)
+        detail.textColor = .secondaryLabelColor
+        for view in [icon, title, detail] { background.addSubview(view) }
+        panel.contentView = background
+    }
+
+    func show(symbol: String, title text: String, detail note: String) {
+        icon.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+        title.stringValue = text
+        detail.stringValue = note
+        title.sizeToFit()
+        detail.sizeToFit()
+        let textWidth = max(title.frame.width, detail.frame.width)
+        let size = NSSize(width: max(180, 18 + 26 + 12 + textWidth + 22), height: 58)
+        background.frame = NSRect(origin: .zero, size: size)
+        icon.frame = NSRect(x: 18, y: (size.height - 26) / 2, width: 26, height: 26)
+        title.frame.origin = NSPoint(x: 56, y: note.isEmpty ? (size.height - title.frame.height) / 2 : 30)
+        detail.frame.origin = NSPoint(x: 56, y: 11)
+        detail.isHidden = note.isEmpty
+
+        let mouse = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(mouse) } ?? NSScreen.main
+        let area = screen?.visibleFrame ?? NSRect(x: 0, y: 0, width: 1280, height: 800)
+        panel.setFrame(NSRect(x: area.midX - size.width / 2, y: area.minY + 88, width: size.width, height: size.height), display: true)
+        panel.invalidateShadow()   // 陰影依圓角形狀重算，不然會沿用舊的方形外框
+        if !panel.isVisible { panel.alphaValue = 0 }
+        panel.orderFrontRegardless()
+        NSAnimationContext.runAnimationGroup { $0.duration = 0.12; panel.animator().alphaValue = 1 }
+
+        hideWork?.cancel()
+        let work = DispatchWorkItem { [weak self] in
+            guard let self else { return }
+            NSAnimationContext.runAnimationGroup({ $0.duration = 0.25; self.panel.animator().alphaValue = 0 }) {
+                if self.panel.alphaValue == 0 { self.panel.orderOut(nil) }
+            }
+        }
+        hideWork = work
+        DispatchQueue.main.asyncAfter(deadline: .now() + 1.4, execute: work)
+    }
+
+    // 可伸縮的圓角遮罩：四角固定、中間拉伸，大小變了也不會變形。
+    private static func roundedMask(radius: CGFloat) -> NSImage {
+        let side = radius * 2 + 1
+        let image = NSImage(size: NSSize(width: side, height: side), flipped: false) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(roundedRect: rect, xRadius: radius, yRadius: radius).fill()
+            return true
+        }
+        image.capInsets = NSEdgeInsets(top: radius, left: radius, bottom: radius, right: radius)
+        image.resizingMode = .stretch
+        return image
+    }
 }

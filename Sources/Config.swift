@@ -51,16 +51,18 @@ enum MouseInput: String, CaseIterable, Codable {
     }
 }
 
-// 適合滑過圓環時用的短促觸覺波形（MX Master 4 的 0x19B0 都支援；編號參考 Solaar）。
+// 短促的觸覺波形（MX Master 4 的 0x19B0 都支援；編號參考 Solaar）。各種震動時機共用這份清單。
 struct HapticWave: Identifiable {
     let id: Int
     let title: String
 
     static let defaultWave = 0x04
+    static func valid(_ id: Int, or fallback: Int) -> Int { all.contains { $0.id == id } ? id : fallback }
+    static func title(_ id: Int) -> String { all.first { $0.id == id }?.title ?? "" }
     static var all: [HapticWave] {
         [
             HapticWave(id: 0x1B, title: Lang.t("極輕", "Whisper")),
-            HapticWave(id: 0x04, title: Lang.t("輕微（預設）", "Subtle (default)")),
+            HapticWave(id: 0x04, title: Lang.t("輕微", "Subtle")),
             HapticWave(id: 0x01, title: Lang.t("柔和", "Soft")),
             HapticWave(id: 0x03, title: Lang.t("柔和碰撞", "Soft bump")),
             HapticWave(id: 0x00, title: Lang.t("清脆", "Crisp")),
@@ -91,6 +93,18 @@ struct Config: Codable {
     var ringColor = "dark"       // "dark" 深色、"light" 白色
     var ringHaptic = true        // 游標滑過圓環選項時讓滑鼠震一下
     var ringHapticWave = 0x04    // 震動波形，見 HapticWave
+    var gestureHaptic = true     // 手勢方向判定完成時
+    var gestureHapticWave = 0x03
+    var flowHaptic = true        // MX Flow 切換電腦前
+    var flowHapticWave = 0x02
+    var modeHaptic = true        // 精準模式、段落／自由滾動切換時
+    var modeHapticWave = 0x00
+    var precisionDpi = 400       // 精準模式的指標速度
+    var showModeHUD = true       // 切換模式時在螢幕下方顯示提示
+    var gestureSensitivity = 50.0   // 手勢靈敏度 0–100%，50% 是原本的距離
+    var lowBatteryAlert = true   // 電量降到門檻以下（沒在充電）時通知一次
+    var lowBatteryLevel = 15     // 低電量門檻（%）
+    var lowBatteryHapticPause = true   // 低電量時暫停所有震動
     var language = "Auto"
     var device = DeviceSettings()
     var edgeSwitch = EdgeSwitchSettings()
@@ -113,15 +127,22 @@ struct Config: Codable {
         .actionRing: ActionBinding(.launchpad),
     ]
 
-    // 50% 對應設計尺寸的 0.7 倍（使用者選定的預設大小）；0% 是它的一半，100% 是 1.5 倍。
-    var ringScaleFactor: Double { 0.7 * (0.5 + ringSize / 100) }
-    static let maxRingScaleFactor = 0.7 * 1.5
+    // 50% 對應設計尺寸的 0.658 倍；0% 是它的一半，100% 是 1.5 倍。
+    // 2026-10-17 與 Windows 版一致縮小：原本基準 0.7，舊的 44%（0.7 × 0.94）變成新的 50%。
+    static let ringScaleBase = 0.7 * 0.94
+    var ringScaleFactor: Double { Config.ringScaleBase * (0.5 + ringSize / 100) }
+    static let maxRingScaleFactor = ringScaleBase * 1.5
 
     // 相對設計圓圈（半徑 39pt）的倍率：0% = 0.6 倍、50% = 0.8 倍（使用者選定的預設）、
     // 100% = 1.025 倍（使用者選定的上限）。
     var bubbleScaleFactor: Double {
         bubbleSize <= 50 ? 0.6 + 0.2 * (bubbleSize / 50) : 0.8 + 0.225 * ((bubbleSize - 50) / 50)
     }
+
+    static let lowBatteryLevels = [5, 10, 15, 20, 25, 30]
+
+    // 手勢要滑多遠才鎖定方向的倍率：0% = 2 倍距離（較不靈敏）、50% = 原本的距離、100% = 一半。
+    var gestureDistanceFactor: Double { pow(2, (50 - gestureSensitivity) / 50) }
 
     func binding(for input: MouseInput) -> ActionBinding {
         mappings[input.rawValue] ?? Config.defaultMappings[input] ?? ActionBinding(.passThrough)
@@ -170,8 +191,20 @@ struct Config: Codable {
         ringOpacity = min(max((try? c.decode(Double.self, forKey: .ringOpacity)) ?? 1.0, 0.4), 1.0)
         ringColor = (try? c.decode(String.self, forKey: .ringColor)) == "light" ? "light" : "dark"
         ringHaptic = (try? c.decode(Bool.self, forKey: .ringHaptic)) ?? true
-        ringHapticWave = (try? c.decode(Int.self, forKey: .ringHapticWave)) ?? HapticWave.defaultWave
-        if !HapticWave.all.contains(where: { $0.id == ringHapticWave }) { ringHapticWave = HapticWave.defaultWave }
+        ringHapticWave = HapticWave.valid((try? c.decode(Int.self, forKey: .ringHapticWave)) ?? -1, or: HapticWave.defaultWave)
+        gestureHaptic = (try? c.decode(Bool.self, forKey: .gestureHaptic)) ?? true
+        gestureHapticWave = HapticWave.valid((try? c.decode(Int.self, forKey: .gestureHapticWave)) ?? -1, or: 0x03)
+        flowHaptic = (try? c.decode(Bool.self, forKey: .flowHaptic)) ?? true
+        flowHapticWave = HapticWave.valid((try? c.decode(Int.self, forKey: .flowHapticWave)) ?? -1, or: 0x02)
+        modeHaptic = (try? c.decode(Bool.self, forKey: .modeHaptic)) ?? true
+        modeHapticWave = HapticWave.valid((try? c.decode(Int.self, forKey: .modeHapticWave)) ?? -1, or: 0x00)
+        precisionDpi = min(max((try? c.decode(Int.self, forKey: .precisionDpi)) ?? 400, 50), 8000)
+        showModeHUD = (try? c.decode(Bool.self, forKey: .showModeHUD)) ?? true
+        gestureSensitivity = min(max((try? c.decode(Double.self, forKey: .gestureSensitivity)) ?? 50, 0), 100)
+        lowBatteryAlert = (try? c.decode(Bool.self, forKey: .lowBatteryAlert)) ?? true
+        let level = (try? c.decode(Int.self, forKey: .lowBatteryLevel)) ?? 15
+        lowBatteryLevel = Config.lowBatteryLevels.contains(level) ? level : 15
+        lowBatteryHapticPause = (try? c.decode(Bool.self, forKey: .lowBatteryHapticPause)) ?? true
         language = (try? c.decode(String.self, forKey: .language)) ?? "Auto"
         device = (try? c.decode(DeviceSettings.self, forKey: .device)) ?? DeviceSettings()
         diagnosticsToFile = (try? c.decode(Bool.self, forKey: .diagnosticsToFile)) ?? false

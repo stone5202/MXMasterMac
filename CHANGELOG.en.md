@@ -4,6 +4,25 @@
   <a href="CHANGELOG.md">繁體中文</a> · <strong>English</strong>
 </p>
 
+## 2.2 — 2026-10-17
+
+- New Haptics page (between Pointer & Wheel and MX Flow). The haptic strength moves here from Pointer & Wheel, and four haptic moments can each be switched on or off, given a waveform and tried:
+  - Actions Ring slices (moved from the Gestures & Ring page; the setting carries over)
+  - Gesture recognized (new, on by default, soft bump)
+  - MX Flow switch, right before the mouse leaves (new, on by default, crisp bump)
+  - Mode changes: precision mode on/off and ratchet / free spin (new, on by default, crisp)
+- New precision mode: hold the chosen button to drop the pointer to a slower DPI (400 by default) for detailed work; release to go back. Set the speed and pick the trigger on the Pointer & Wheel page.
+- New Mouse category in the action menu: Precision mode (hold), Precision mode (toggle), Toggle ratchet / free spin. Available on buttons, gestures and the ring; from the ring or a gesture, "hold" works as a toggle.
+- On-screen hint: when precision mode or the wheel mode changes, the new state shows briefly at the bottom of the screen (can be turned off on Pointer & Wheel).
+- The "Subtle (default)" waveform is now just "Subtle", since each haptic moment has its own default.
+- New Switch to channel 1 / 2 / 3 actions (Easy-Switch category): a button, gesture or Actions Ring slice moves the mouse straight to that Easy-Switch channel. The ring shows "Channel N"; the menu adds the computer name stored on the channel. Nothing happens on the current channel or an unpaired one.
+- Low-battery alert (new Battery card on the Advanced page, on by default): one system notification when the level drops to the threshold (15% by default, 5–30%) while not charging; it alerts again only after charging. If notifications are turned off, a hint shows at the bottom of the screen instead.
+- Pause haptics on low battery (Haptics page, on by default): below the threshold and not charging, no automatic taps play; the Try buttons still do. The page says so while paused.
+- The Permissions card on the Advanced page has a new Notifications row, so low-battery notifications can be allowed in advance; once declined, its button opens the Notifications page of System Settings.
+- Gesture sensitivity (Gestures & Ring page, 50% = the original distance): higher means a shorter swipe picks a direction.
+- The Haptics page's "MX Flow switch" is now "Computer switch" and also covers the Switch to channel actions.
+- Smaller default Actions Ring (matching the Windows edition 2.2): the new Overall size 50% (the default) equals the old 44%. Saved percentages are kept, so an existing ring shows about 6% smaller.
+
 ## 2.1 — 2026-10-15
 
 - Actions Ring: new "Haptic tick on each slice" (on by default) — the mouse taps lightly as the pointer moves onto another slice. Choose from six waveforms (picking one plays it at once, and there is a Try button); the strength follows Haptic feedback on the Pointer & Wheel page.

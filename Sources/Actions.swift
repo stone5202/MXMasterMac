@@ -21,8 +21,24 @@ enum MappedAction: String, CaseIterable, Codable {
     case insertDate, insertTime, enter, escape, delete
     // 本程式
     case openSettings
+    // 滑鼠（由 AppModel 處理）
+    case precisionHold, precisionToggle, wheelModeToggle
+    // Easy-Switch：把滑鼠切到指定頻道（由 AppModel 處理）
+    case hostChannel1, hostChannel2, hostChannel3
     // 自訂
     case customShortcut, launch
+}
+
+extension MappedAction {
+    // 切換頻道的動作對應的頻道（0 起算）；其他動作是 nil。
+    var hostChannel: Int? {
+        switch self {
+        case .hostChannel1: return 0
+        case .hostChannel2: return 1
+        case .hostChannel3: return 2
+        default: return nil
+        }
+    }
 }
 
 struct ActionBinding: Codable, Equatable, Hashable {
@@ -37,6 +53,12 @@ struct ActionBinding: Codable, Equatable, Hashable {
     }
 
     var isPassThrough: Bool { action == .passThrough }
+
+    // 圓環上的名稱：切換頻道只寫頻道號，電腦名稱可能很長或重複（同一台電腦的藍牙與 Bolt 頻道同名）。
+    var ringTitle: String {
+        if let channel = action.hostChannel { return Lang.t("頻道 \(channel + 1)", "Channel \(channel + 1)") }
+        return title
+    }
 
     var title: String {
         switch action {
@@ -59,6 +81,8 @@ enum ActionCatalog {
     static var groups: [Group] {
         [
             Group(title: Lang.t("一般", "General"), actions: [.passThrough, .openSettings]),
+            Group(title: Lang.t("滑鼠", "Mouse"), actions: [.precisionHold, .precisionToggle, .wheelModeToggle]),
+            Group(title: "Easy-Switch", actions: [.hostChannel1, .hostChannel2, .hostChannel3]),
             Group(title: Lang.t("導覽", "Navigation"), actions: [
                 .navigateBack, .navigateForward, .missionControl, .appExpose, .showDesktop,
                 .launchpad, .spaceLeft, .spaceRight, .appSwitcher]),
@@ -78,7 +102,14 @@ enum ActionCatalog {
         ]
     }
 
+    // 各頻道記錄的電腦名稱，由 AppModel 讀到頻道後填入；選單裡附在頻道號後面。
+    static var hostNames: [Int: String] = [:]
+
     static func title(_ action: MappedAction) -> String {
+        if let channel = action.hostChannel {
+            let name = hostNames[channel] ?? ""
+            return Lang.t("切換到頻道 \(channel + 1)", "Switch to channel \(channel + 1)") + (name.isEmpty ? "" : Lang.t("（\(name)）", " (\(name))"))
+        }
         switch action {
         case .passThrough: return Lang.t("保留原功能", "Keep default")
         case .navigateBack: return Lang.t("上一頁", "Back")
@@ -129,6 +160,10 @@ enum ActionCatalog {
         case .escape: return "Esc"
         case .delete: return "Delete"
         case .openSettings: return Lang.t("MX設定", "MX Settings")
+        case .precisionHold: return Lang.t("精準模式（按住）", "Precision mode (hold)")
+        case .precisionToggle: return Lang.t("精準模式（開／關）", "Precision mode (toggle)")
+        case .wheelModeToggle: return Lang.t("切換段落／自由滾動", "Toggle ratchet / free spin")
+        case .hostChannel1, .hostChannel2, .hostChannel3: return ""   // 上面已處理
         case .customShortcut: return Lang.t("自訂快捷鍵…", "Custom shortcut…")
         case .launch: return Lang.t("開啟 App／檔案／網址…", "Open app / file / URL…")
         }
@@ -186,6 +221,12 @@ enum ActionCatalog {
         case .escape: return "escape"
         case .delete: return "delete.left"
         case .openSettings: return "slider.horizontal.3"
+        case .precisionHold: return "scope"
+        case .precisionToggle: return "dot.scope"
+        case .wheelModeToggle: return "dial.medium"
+        case .hostChannel1: return "1.circle"
+        case .hostChannel2: return "2.circle"
+        case .hostChannel3: return "3.circle"
         case .customShortcut: return "command"
         case .launch: return "arrow.up.forward.app"
         }
@@ -195,6 +236,7 @@ enum ActionCatalog {
 enum ActionRunner {
     private static let source = CGEventSource(stateID: .hidSystemState)
     static var openSettings: (() -> Void)?     // 由 AppDelegate 設定：開啟本程式的設定視窗
+    static var mouseAction: ((MappedAction) -> Bool)?   // 由 AppModel 設定：精準模式、滾動模式、切換頻道
 
     // 回傳 false 表示沒有送出任何東西（例如缺少輔助使用權限或參數是空的）。
     @discardableResult
@@ -253,6 +295,9 @@ enum ActionRunner {
             guard let shortcut = Shortcut(param: binding.param) else { return false }
             return combo(shortcut.keyCode, shortcut.flags)
         case .launch: return launch(binding.param)
+        // 從圓環、手勢或拇指滾輪執行時沒有「按住」可言，精準模式（按住）在這裡等同開／關。
+        case .precisionHold, .precisionToggle, .wheelModeToggle, .hostChannel1, .hostChannel2, .hostChannel3:
+            return mouseAction?(binding.action) ?? false
         case .openSettings:
             guard let openSettings else { return false }
             // 等圓環或手勢提示先收起來再開視窗。

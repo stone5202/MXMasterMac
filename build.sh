@@ -25,7 +25,7 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 swiftc -O -swift-version 5 -target arm64-apple-macos14.0 \
-    -framework AppKit -framework SwiftUI -framework IOKit -framework ServiceManagement -framework Carbon \
+    -framework AppKit -framework SwiftUI -framework IOKit -framework ServiceManagement -framework Carbon -framework UserNotifications \
     -o "$APP/Contents/MacOS/MXMasterMac" Sources/*.swift
 
 cp Info.plist "$APP/Contents/Info.plist"
