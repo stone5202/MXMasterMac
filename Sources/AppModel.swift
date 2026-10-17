@@ -5,7 +5,7 @@ import UserNotifications
 
 // 全部的執行期狀態與輸入處理邏輯；只在主執行緒使用。
 final class AppModel: ObservableObject {
-    static let version = "2.2"
+    static let version = "2.2.1"
 
     @Published var config: Config { didSet { configChanged() } }
     @Published var status: DeviceStatus = .searching
@@ -59,6 +59,8 @@ final class AppModel: ObservableObject {
     // 精準模式：開啟時把 DPI 暫時降到 config.precisionDpi，關閉時寫回原本的速度。
     private var precisionNormalDpi = 0
     private var precisionHeldBy: MouseInput?   // 由「按住」觸發時是哪顆鍵；放開它就恢復
+    private var precisionSeq = 0               // 每次切換加一；寫入完成時編號已變就不再處理那次的結果
+    private var precisionRestorePending = false   // 已關閉精準模式，但正常速度還沒確認寫回
 
     // 低電量：每次電量降到門檻以下只通知一次；充電或回到門檻之上（多 3%）後才會再通知。
     private var lowBatteryNotified = false
@@ -127,8 +129,8 @@ final class AppModel: ObservableObject {
     }
 
     func shutdown() {
-        // 精準模式開著就結束的話，先把速度寫回去。
-        if precisionActive, precisionNormalDpi > 0 {
+        // 精準模式開著、或關閉後速度還沒確認寫回就結束的話，先把速度寫回去。
+        if precisionActive || precisionRestorePending, precisionNormalDpi > 0 {
             let dpi = precisionNormalDpi
             hidpp.performNow { _ = $0.setDpi(dpi) }
         }
@@ -166,6 +168,14 @@ final class AppModel: ObservableObject {
             cancelGesture()
             if precisionActive { setPrecision(false) }
         }
+        // 暫停期間不處理滑鼠事件，按著的鍵放開了也不知道；暫停與恢復時都把按住狀態清掉，
+        // 免得恢復後 MX Flow 還以為切換按鍵按著，或吃掉一次沒有對應按下的放開。
+        deferredInput = nil
+        heldInputs.removeAll()
+        buttonState.removeAll()
+        swallowedButtons.removeAll()
+        swallowLeftUp = false
+        swallowRightUp = false
         hidpp.setEnabled(value)
     }
 
@@ -245,6 +255,8 @@ final class AppModel: ObservableObject {
         // 重新連線時會把儲存的速度寫回去，精準模式就此結束。
         precisionActive = false
         precisionHeldBy = nil
+        precisionRestorePending = false
+        precisionSeq += 1
         hidpp.restore(config.device) { [weak self] snapshot, results in
             guard let self else { return }
             if let snapshot {
@@ -273,6 +285,8 @@ final class AppModel: ObservableObject {
     func applyDpi(_ value: Int) {
         precisionActive = false
         precisionHeldBy = nil
+        precisionRestorePending = false
+        precisionSeq += 1
         applyDevice("DPI \(value)", { $0.setDpi(value) }) { $0.dpi = value }
     }
 
@@ -697,9 +711,12 @@ final class AppModel: ObservableObject {
     }
 
     // 狀態立刻改，寫入照順序排在 HID++ 佇列上；按一下馬上放開也會先降再升。
+    // 切換提示等滑鼠回讀確認後才顯示；寫入失敗時重試一次，仍失敗就提示。
     @discardableResult
     func setPrecision(_ on: Bool, quiet: Bool = false) -> Bool {
         guard on != precisionActive else { return true }
+        precisionSeq += 1
+        let seq = precisionSeq
         if on {
             guard case .ready = status, let snapshot, snapshot.dpi > 0 else { return false }
             let normal = config.device.dpi ?? snapshot.dpi
@@ -708,26 +725,43 @@ final class AppModel: ObservableObject {
             let low = snapshot.dpiMax > 0 ? min(max(config.precisionDpi, snapshot.dpiMin), snapshot.dpiMax) : config.precisionDpi
             precisionNormalDpi = normal
             precisionActive = true
-            hidpp.write({ $0.setDpi(low) }) { [weak self] ok in
-                self?.log("Precision on DPI \(low) verified=\(ok)")
-            }
-            if !quiet {
-                showModeHUD("scope", Lang.t("精準模式", "Precision mode"), "\(low) DPI")
-                playModeHaptic()
-            }
+            precisionRestorePending = false
+            writePrecisionDpi(low, on: true, seq: seq, quiet: quiet, retry: true)
         } else {
-            let normal = precisionNormalDpi
             precisionActive = false
             precisionHeldBy = nil
-            hidpp.write({ $0.setDpi(normal) }) { [weak self] ok in
-                self?.log("Precision off DPI \(normal) verified=\(ok)")
-            }
-            if !quiet {
-                showModeHUD("cursorarrow.motionlines", Lang.t("指標速度已恢復", "Pointer speed restored"), "\(normal) DPI")
-                playModeHaptic()
+            precisionRestorePending = true
+            writePrecisionDpi(precisionNormalDpi, on: false, seq: seq, quiet: quiet, retry: true)
+        }
+        if !quiet { playModeHaptic() }
+        return true
+    }
+
+    private func writePrecisionDpi(_ dpi: Int, on: Bool, seq: Int, quiet: Bool, retry: Bool) {
+        hidpp.write({ $0.setDpi(dpi) }) { [weak self] ok in
+            guard let self else { return }
+            self.log("Precision \(on ? "on" : "off") DPI \(dpi) verified=\(ok)" + (retry ? "" : " (retry)"))
+            // 之後又切換過、重新連線或手動改了速度：這次的結果不算數。
+            guard seq == self.precisionSeq else { return }
+            if ok {
+                if on {
+                    if !quiet { self.showModeHUD("scope", Lang.t("精準模式", "Precision mode"), "\(dpi) DPI") }
+                } else {
+                    self.precisionRestorePending = false
+                    if !quiet { self.showModeHUD("cursorarrow.motionlines", Lang.t("指標速度已恢復", "Pointer speed restored"), "\(dpi) DPI") }
+                }
+            } else if retry {
+                self.writePrecisionDpi(dpi, on: on, seq: seq, quiet: quiet, retry: false)
+            } else if on {
+                // 速度沒降下來：精準模式當作沒開。
+                self.precisionActive = false
+                self.precisionHeldBy = nil
+                if !quiet { self.modeHUD.show(symbol: "exclamationmark.triangle", title: Lang.t("精準模式未能開啟", "Precision mode failed"), detail: Lang.t("無法寫入滑鼠速度", "Couldn't set the mouse speed")) }
+            } else {
+                // 速度沒寫回：保留待寫回的狀態，結束程式時再寫一次；重新連線時也會套回儲存的速度。
+                if !quiet { self.modeHUD.show(symbol: "exclamationmark.triangle", title: Lang.t("指標速度未能恢復", "Pointer speed not restored"), detail: Lang.t("重新連線後會套用 \(dpi) DPI", "\(dpi) DPI is applied on reconnect")) }
             }
         }
-        return true
     }
 
     private func toggleWheelMode() -> Bool {
@@ -781,10 +815,10 @@ final class AppModel: ObservableObject {
             lowBatteryNotified = false
             return
         }
-        guard percent <= config.lowBatteryLevel, !lowBatteryNotified else { return }
+        // 提醒關著時不標成已通知：之後打開提醒，這次放電還會通知一次。
+        guard percent <= config.lowBatteryLevel, !lowBatteryNotified, config.lowBatteryAlert else { return }
         lowBatteryNotified = true
         log("Battery low: \(percent)% (threshold \(config.lowBatteryLevel)%)" + (hapticsPaused ? "; haptics paused" : ""))
-        guard config.lowBatteryAlert else { return }
         let title = Lang.t("MX Master 4 電量低", "MX Master 4 battery low")
         let body = Lang.t("剩 \(percent)%，請盡快充電。", "\(percent)% left. Charge it soon.")
             + (hapticsPaused ? Lang.t("充電前震動會暫停。", " Haptics are paused until it charges.") : "")

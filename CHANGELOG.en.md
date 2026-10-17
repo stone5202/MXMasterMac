@@ -4,6 +4,12 @@
   <a href="CHANGELOG.md">繁體中文</a> · <strong>English</strong>
 </p>
 
+## 2.2.1 — 2026-10-17
+
+- Fix: when writing the precision-mode speed failed, the hint still said "Pointer speed restored". The hint now waits for the mouse to confirm; a failed write is retried once, then "Pointer speed not restored" shows and the speed is written again on quit (the saved speed is also restored on reconnect). A failed switch into precision mode is reported too instead of staying on.
+- Fix: turning the low-battery alert on while the battery was already below the threshold never alerted.
+- Fix: pausing while holding the MX Flow key and releasing it before resuming left the key counted as held, so pushing a screen edge could switch computers by mistake.
+
 ## 2.2 — 2026-10-17
 
 - New Haptics page (between Pointer & Wheel and MX Flow). The haptic strength moves here from Pointer & Wheel, and four haptic moments can each be switched on or off, given a waveform and tried:
