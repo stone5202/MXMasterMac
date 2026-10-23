@@ -282,16 +282,23 @@ final class AppModel: ObservableObject {
     }
 
     // 設定頁改了指標速度：那就是新的正常速度，精準模式結束。
+    // 精準模式開著時改速度，若寫入失敗就把原本的正常速度補寫回去，免得停在精準速度。
     func applyDpi(_ value: Int) {
+        let restoreDpi = precisionActive || precisionRestorePending ? precisionNormalDpi : 0
         precisionActive = false
         precisionHeldBy = nil
         precisionRestorePending = false
         precisionSeq += 1
-        applyDevice("DPI \(value)", { $0.setDpi(value) }) { $0.dpi = value }
+        let seq = precisionSeq
+        applyDevice("DPI \(value)", { $0.setDpi(value) }, save: { $0.dpi = value }, done: { [weak self] ok in
+            guard let self, !ok, restoreDpi > 0, seq == self.precisionSeq else { return }
+            self.precisionRestorePending = true
+            self.writePrecisionDpi(restoreDpi, on: false, seq: seq, quiet: true, retry: true)
+        })
     }
 
     // 套用一項裝置設定；滑鼠回讀確認後才寫進設定檔。
-    func applyDevice(_ name: String, _ operation: @escaping (HIDPP) -> Bool, save: @escaping (inout DeviceSettings) -> Void) {
+    func applyDevice(_ name: String, _ operation: @escaping (HIDPP) -> Bool, save: @escaping (inout DeviceSettings) -> Void, done: ((Bool) -> Void)? = nil) {
         deviceMessage = Lang.t("套用中…", "Applying…")
         hidpp.write(operation) { [weak self] ok in
             guard let self else { return }
@@ -302,6 +309,7 @@ final class AppModel: ObservableObject {
             } else {
                 self.deviceMessage = name + Lang.t("：滑鼠沒有確認，未套用", ": not confirmed by the mouse")
             }
+            done?(ok)
             self.refreshDevice()
         }
     }
@@ -753,9 +761,12 @@ final class AppModel: ObservableObject {
             } else if retry {
                 self.writePrecisionDpi(dpi, on: on, seq: seq, quiet: quiet, retry: false)
             } else if on {
-                // 速度沒降下來：精準模式當作沒開。
+                // 沒確認到降速：精準模式當作沒開。回讀逾時時速度可能其實已經降了，
+                // 所以標成待寫回並安靜補寫正常速度，成功才清掉。
                 self.precisionActive = false
                 self.precisionHeldBy = nil
+                self.precisionRestorePending = true
+                self.writePrecisionDpi(self.precisionNormalDpi, on: false, seq: seq, quiet: true, retry: true)
                 if !quiet { self.modeHUD.show(symbol: "exclamationmark.triangle", title: Lang.t("精準模式未能開啟", "Precision mode failed"), detail: Lang.t("無法寫入滑鼠速度", "Couldn't set the mouse speed")) }
             } else {
                 // 速度沒寫回：保留待寫回的狀態，結束程式時再寫一次；重新連線時也會套回儲存的速度。

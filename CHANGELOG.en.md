@@ -4,11 +4,13 @@
   <a href="CHANGELOG.md">繁體中文</a> · <strong>English</strong>
 </p>
 
-## 2.2.1 — 2026-10-17
+## 2.2.1 — 2026-10-17 (updated 2026-10-23)
 
 - Fix: when writing the precision-mode speed failed, the hint still said "Pointer speed restored". The hint now waits for the mouse to confirm; a failed write is retried once, then "Pointer speed not restored" shows and the speed is written again on quit (the saved speed is also restored on reconnect). A failed switch into precision mode is reported too instead of staying on.
 - Fix: turning the low-battery alert on while the battery was already below the threshold never alerted.
 - Fix: pausing while holding the MX Flow key and releasing it before resuming left the key counted as held, so pushing a screen edge could switch computers by mistake.
+- Fix: if the mouse didn't confirm the new speed when turning on precision mode (for example a read-back timeout after the speed had actually dropped), the pointer could stay at the precision speed even after releasing the button. The normal speed is now written back in the background, and once more on quit if that also fails.
+- Fix: changing the pointer speed on the Pointer & Wheel page while precision mode was on left the pointer at the precision speed if the mouse didn't confirm the new value. The normal speed is now restored.
 
 ## 2.2 — 2026-10-17
 
@@ -49,8 +51,8 @@
 ## 1.1.1 — 2026-10-13
 
 - Works over the Logi Bolt receiver.
-- Fixed: the mouse was not found when the receiver was already plugged in and the mouse switched to it later.
-- Fixed: the mouse was not found over Bluetooth while the receiver stayed plugged in.
+- Fix: the mouse was not found when the receiver was already plugged in and the mouse switched to it later.
+- Fix: the mouse was not found over Bluetooth while the receiver stayed plugged in.
 - After the mouse switches between Bluetooth and Logi Bolt the app follows it without a restart; while disconnected it retries every 3 seconds.
 
 ## 1.1 — 2026-10-13
