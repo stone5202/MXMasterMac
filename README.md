@@ -8,9 +8,9 @@
   <img src="Resources/app.png" width="128" alt="MX Master Mac app icon">
 </p>
 
-MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：常駐選單列，不裝 Logi Options+ 也能自訂按鍵、拇指手勢與 Actions Ring 圓環，並調整指標速度、SmartShift、捲動方向與觸覺回饋；2.0 起新增 **MX Flow**，把游標推到螢幕邊緣就能讓滑鼠切到另一台電腦。它和 Windows 版 [MX Master Win](https://github.com/stone5202/MXMasterWin)（原名 MX Master Portable）是同一個產品的兩個版本，功能與設定方式一致，macOS 版以 Swift 重新寫成；兩台電腦各裝一個版本，就能用 MX Flow 在 Mac 與 Windows 之間來回切換。
+MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：常駐選單列，不裝 Logi Options+ 也能自訂按鍵、拇指手勢與 Actions Ring 圓環，並調整指標速度、SmartShift、捲動方向與觸覺回饋；2.0 起新增 **MX Flow**，把游標推到螢幕邊緣就能讓滑鼠切到另一台電腦；2.3 起也支援 Logitech 鍵盤，可以查看電量、設定背光與 F 鍵，並讓鍵盤跟著滑鼠一起切換電腦。它和 Windows 版 [MX Master Win](https://github.com/stone5202/MXMasterWin)（原名 MX Master Portable）是同一個產品的兩個版本，功能與設定方式一致，macOS 版以 Swift 重新寫成；兩台電腦各裝一個版本，就能用 MX Flow 在 Mac 與 Windows 之間來回切換。
 
-> 目前版本：2.2.1 · 介面語言：繁體中文、English（預設跟隨系統）
+> 目前版本：2.3 · 介面語言：繁體中文、English（預設跟隨系統）
 
 各版本的更新內容請參閱 [更新紀錄](CHANGELOG.md) 或 [GitHub Releases](https://github.com/stone5202/MXMasterMac/releases)。
 
@@ -33,11 +33,13 @@ MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：�
 </p>
 
 <p align="center">
-  <img src="docs/screenshots/flow.zh-TW.png" width="80%" alt="MX Flow 頁：螢幕邊緣切換電腦與 Easy-Switch 頻道">
+  <img src="docs/screenshots/flow.zh-TW.png" width="45%" alt="MX Flow 頁：螢幕邊緣切換電腦與鍵盤一起切換">
+  &nbsp;
+  <img src="docs/screenshots/keyboard.zh-TW.png" width="45%" alt="鍵盤頁：電量、背光、F 鍵與 Easy-Switch 頻道">
 </p>
 
 <p align="center">
-  MX Flow
+  MX Flow · 鍵盤
 </p>
 
 <p align="center">
@@ -71,6 +73,8 @@ MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：�
 - **電池**（「進階」頁）：電量降到門檻（預設 15%）且沒有充電時發出一次系統通知，並可自動暫停震動以省電。
 - **裝置設定**：顯示電量與韌體版本；調整指標速度（DPI）、SmartShift、捲動方向與觸覺回饋強度。套用過的數值會保存，滑鼠重新連線後自動再套用。
 - **MX Flow**：游標持續推著螢幕邊緣，滑鼠就切到指定的 Easy-Switch 頻道（另一台電腦）。四個邊緣可分別指定頻道，觸發時間可調，可要求按住一個鍵盤按鍵或滑鼠按鍵才切換；多螢幕時只有最外側螢幕的外緣會觸發。也會列出三個頻道記錄的電腦名稱，並可直接按鈕切換；選單列的選單裡也有 MX Flow 開關。
+- **鍵盤**（2.3 起）：以藍牙連到這台 Mac 的 Logitech 鍵盤（實測 MX Mechanical Mini），在「鍵盤」頁顯示連線、電量、韌體，設定背光（自動／手動亮度／關閉）與最上排按鍵預設是媒體鍵或 F1–F12；左下角同時顯示滑鼠與鍵盤的電量。
+- **鍵盤一起切換**（2.3 起）：滑鼠切到另一台電腦時（MX Flow、「切換到頻道」動作或「切換過去」按鈕），鍵盤也切到對應的 Easy-Switch 頻道。每個滑鼠頻道可指定鍵盤頻道，預設自動對應（同名電腦的頻道，否則同一個頻道號）。
 - **切換連線後自動恢復**：滑鼠切到別台電腦再切回來，或在 Bluetooth 與 Logi Bolt 之間切換，專用按鍵會自動重新啟用。
 - **其他**：設定自動儲存、只會執行一份、可暫停、可設定登入時自動啟動、介面可切換中文／英文。
 - **工程模式**：檢視滑鼠送出的事件，方便回報問題。
@@ -79,6 +83,7 @@ MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：�
 
 - macOS 14 或更新版本，Apple 晶片（開發與測試環境為 macOS 27）
 - Logitech MX Master 4（Bluetooth 或 Logi Bolt 接收器）
+- 鍵盤功能（選用）：以藍牙連線、支援 HID++ 2.0 的 Logitech 鍵盤
 
 ## 需要的權限
 
@@ -93,7 +98,8 @@ MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：�
 - 與 Logi Options+ 同時執行時，兩者會互相覆寫按鍵改道與裝置設定，請擇一使用。
 - 側鍵與拇指滾輪的對應會套用到所有滑鼠（系統事件分不出來源裝置）。
 - 指揮中心、App Exposé、顯示桌面、切換桌面等動作是送出系統預設的快捷鍵；在「系統設定 → 鍵盤 → 鍵盤快速鍵」改過或關掉的話不會有作用。
-- MX Flow 只切換滑鼠：不傳送剪貼簿或檔案，鍵盤不會跟著切換。另一台電腦也要執行有 MX Flow 的版本並設定邊緣，才能用同樣方式切回來；否則請按滑鼠底部的 Easy‑Switch 鍵。
+- MX Flow 不傳送剪貼簿或檔案。另一台電腦也要執行有 MX Flow 的版本並設定邊緣，才能用同樣方式切回來；鍵盤要一起切回來，另一台也要是有「鍵盤一起切換」的版本，否則請按滑鼠底部與鍵盤上的 Easy‑Switch 鍵。
+- 鍵盤功能只在 MX Mechanical Mini 上測過，目前只支援藍牙連線的鍵盤（經 Logi Bolt 接收器連到 Mac 的鍵盤還不支援）；用 Bolt 配對的頻道在鍵盤上常記成「Logitech Bolt receiver」，自動對應會用同一個頻道號，必要時請在 MX Flow 頁手動指定。
 - 滑鼠重新連上這台電腦時分不出是從哪裡切回來的；設定了多個邊緣時，游標不會自動移到邊緣。
 - 不包含 Options+ 的逐應用程式設定與韌體更新。
 - 示意圖上的按鍵位置為示意，尚未逐一對照實體校正。
@@ -104,6 +110,7 @@ MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：�
 - 一般按鍵與水平滾輪：`CGEventTap` 攔截，再以 `CGEvent` 送出鍵盤動作。
 - 裝置設定：HID++ 功能 `0x1004`（電量）、`0x0003`（韌體）、`0x2201`（DPI）、`0x2111`（SmartShift）、`0x2121`（捲動方向）、`0x19B0`（觸覺回饋強度與播放震動波形）。每次寫入後都會回讀確認。精準模式是暫時寫入較低的 DPI，放開、暫停、結束程式或切到別台電腦前會寫回原本的速度。
 - MX Flow：`NSEvent` 監看游標移動，判斷是否貼著最外側螢幕的外緣並持續往外推；以 HID++ 功能 `0x1814`（切換主機）送出切換，`0x1815` 讀取各頻道的主機名稱。
+- 鍵盤：另一個 `IOHIDManager` 只讀 HID++ 回報（不讀打字輸入），以 `0x0005` 判斷裝置類型；`0x1004`（電量）、`0x0003`（韌體）、`0x1982`（背光）、`0x40A3`（F 鍵），切換頻道同樣用 `0x1814`。
 - 重新連線偵測：`0x1D4B` 的通知、裝置出現／消失、系統喚醒；沒連上時每 3 秒重試。
 
 HID++ 的功能編號與封包格式參考了開源專案 [Solaar](https://github.com/pwr-Solaar/Solaar) 與 [logiops](https://github.com/PixlOne/logiops) 的公開實作。
@@ -137,6 +144,7 @@ Sources/
 ├── main.swift          # 選單列 App 與設定視窗
 ├── AppModel.swift      # 執行期狀態與輸入處理
 ├── HIDPP.swift         # IOHIDManager 與 HID++ 2.0
+├── Keyboard.swift      # Logitech 鍵盤（HID++）
 ├── EventTap.swift      # 一般按鍵與水平滾輪的攔截
 ├── EdgeSwitch.swift    # MX Flow：螢幕邊緣判定與設定
 ├── Actions.swift       # 動作清單與執行

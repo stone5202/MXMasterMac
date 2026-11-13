@@ -4,6 +4,13 @@
   <a href="CHANGELOG.md">繁體中文</a> · <strong>English</strong>
 </p>
 
+## 2.3 — 2026-11-13
+
+- New Keyboard page (between MX Flow and Advanced) for a Logitech keyboard connected to this Mac over Bluetooth (tested with an MX Mechanical Mini). Like the mouse it shows connection, battery and firmware; it sets the backlight (automatic, manual brightness or off) and whether the top row sends media keys or F1–F12, and lists the keyboard's Easy-Switch channels. Settings live on the keyboard and count as applied once it confirms them.
+- MX Flow: the keyboard follows the mouse. When the mouse moves to another computer (screen edge, a Switch-to-channel action or the Switch button), the keyboard moves to the matching channel, only after the mouse switch went out. Each mouse channel can pick a keyboard channel; Automatic uses the channel with the same computer name, otherwise the same number, and a channel can also leave the keyboard where it is. A keyboard on a Bolt receiver is not supported on the Mac yet.
+- The bottom-left corner of the settings window shows both mouse and keyboard battery (one row each, with a device icon).
+- Screenshots retaken (the sidebar now has Keyboard).
+
 ## 2.2.1 — 2026-10-17 (updated 2026-10-23)
 
 - Fix: when writing the precision-mode speed failed, the hint still said "Pointer speed restored". The hint now waits for the mouse to confirm; a failed write is retried once, then "Pointer speed not restored" shows and the speed is written again on quit (the saved speed is also restored on reconnect). A failed switch into precision mode is reported too instead of staying on.

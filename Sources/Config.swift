@@ -79,6 +79,20 @@ struct DeviceSettings: Codable, Equatable {
     var haptic: Int?             // 0–100
 }
 
+// MX Flow 切換時讓鍵盤一起切。channels：滑鼠頻道（字串，0 起算）→ 鍵盤頻道；-1 = 這個頻道不帶鍵盤；
+// 沒有設定的頻道自動對應（電腦名稱相同的頻道，對不到就用同一個頻道號）。
+struct KeyboardSettings: Codable, Equatable {
+    var followSwitch = true
+    var channels: [String: Int] = [:]
+
+    init() {}
+    init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        followSwitch = (try? c.decode(Bool.self, forKey: .followSwitch)) ?? true
+        channels = (try? c.decode([String: Int].self, forKey: .channels)) ?? [:]
+    }
+}
+
 struct Config: Codable {
     var mappings: [String: ActionBinding] = [:]
     var ring: [ActionBinding] = Config.defaultRing
@@ -108,6 +122,7 @@ struct Config: Codable {
     var language = "Auto"
     var device = DeviceSettings()
     var edgeSwitch = EdgeSwitchSettings()
+    var keyboard = KeyboardSettings()
     var diagnosticsToFile = false
 
     static let defaultRing: [ActionBinding] = [
@@ -209,6 +224,7 @@ struct Config: Codable {
         device = (try? c.decode(DeviceSettings.self, forKey: .device)) ?? DeviceSettings()
         diagnosticsToFile = (try? c.decode(Bool.self, forKey: .diagnosticsToFile)) ?? false
         edgeSwitch = (try? c.decode(EdgeSwitchSettings.self, forKey: .edgeSwitch)) ?? EdgeSwitchSettings()
+        keyboard = (try? c.decode(KeyboardSettings.self, forKey: .keyboard)) ?? KeyboardSettings()
         edgeSwitch.dwell = min(max(edgeSwitch.dwell, EdgeSwitchSettings.dwellRange.lowerBound), EdgeSwitchSettings.dwellRange.upperBound)
     }
 }

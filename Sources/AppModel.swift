@@ -5,7 +5,7 @@ import UserNotifications
 
 // 全部的執行期狀態與輸入處理邏輯；只在主執行緒使用。
 final class AppModel: ObservableObject {
-    static let version = "2.2.1"
+    static let version = "2.3"
 
     @Published var config: Config { didSet { configChanged() } }
     @Published var status: DeviceStatus = .searching
@@ -23,8 +23,11 @@ final class AppModel: ObservableObject {
     @Published var displayCount = EdgeGeometry.displays().count
     @Published var precisionActive = false
     @Published var notificationStatus: UNAuthorizationStatus = .notDetermined
+    @Published var keyboardSnapshot: KeyboardSnapshot?     // nil：沒有連上 Logitech 鍵盤
+    @Published var keyboardMessage = ""
 
     let hidpp = HIDPP()
+    let keyboard = KeyboardHIDPP()
     private let tap = EventTap()
     private let ring = RingOverlay()
     private let hud = GestureHUD()
@@ -98,8 +101,22 @@ final class AppModel: ObservableObject {
             self?.snapshot?.charging = charging
             self?.batteryChanged()
         }
+        keyboard.onLog = { [weak self] in self?.log($0) }
+        keyboard.onChange = { [weak self] snapshot in
+            var snapshot = snapshot
+            // 啟動參數 -demoHosts YES：截圖時鍵盤頻道上的電腦名稱也換成示範名稱（Bolt 接收器的名稱照舊）。
+            if UserDefaults.standard.bool(forKey: "demoHosts"), var kb = snapshot {
+                let names = ["MacBook Pro", "Office PC", "Office PC"]
+                for i in kb.hosts.indices where kb.hosts[i].name != "Logitech Bolt receiver" {
+                    kb.hosts[i].name = i < names.count ? names[i] : ""
+                }
+                snapshot = kb
+            }
+            self?.keyboardSnapshot = snapshot
+        }
         if CommandLine.arguments.contains("--log") { setLogging(true) }
         hidpp.start()
+        keyboard.start()
 
         tap.handler = { [weak self] in self?.tapEvent($0) ?? false }
         installTapIfPossible()
@@ -110,12 +127,16 @@ final class AppModel: ObservableObject {
         timers.append(Timer.scheduledTimer(withTimeInterval: 600, repeats: true) { [weak self] _ in
             self?.hidpp.recheck()
             self?.refreshDevice()
+            self?.keyboard.refresh()
         })
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.didWakeNotification, object: nil,
                                                           queue: .main) { [weak self] _ in
             self?.sleeping = false
             self?.lastWake = Date()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 3) { self?.hidpp.recheck() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 3) {
+                self?.hidpp.recheck()
+                self?.keyboard.refresh()
+            }
         }
         NSWorkspace.shared.notificationCenter.addObserver(forName: NSWorkspace.willSleepNotification, object: nil,
                                                           queue: .main) { [weak self] _ in self?.sleeping = true }
@@ -137,6 +158,7 @@ final class AppModel: ObservableObject {
         for monitor in moveMonitors { NSEvent.removeMonitor(monitor) }
         moveMonitors.removeAll()
         tap.remove()
+        keyboard.stop()
         hidpp.shutdown()
     }
 
@@ -358,6 +380,64 @@ final class AppModel: ObservableObject {
         let haptic: UInt8? = config.flowHaptic && !hapticsPaused ? UInt8(clamping: config.flowHapticWave) : nil
         hidpp.changeHost(host, haptic: haptic) { [weak self] sent in
             self?.log("Switch host sent=\(sent)")
+            // 滑鼠確定切走了才帶鍵盤，免得只有鍵盤離開。
+            if sent { self?.switchKeyboard(withMouseChannel: host) }
+        }
+    }
+
+    // MARK: - 鍵盤
+
+    // 滑鼠切到 channel 時，鍵盤要切到哪個頻道；nil 表示不帶鍵盤。
+    func keyboardChannel(forMouse channel: Int) -> Int? {
+        if let chosen = config.keyboard.channels[String(channel)] { return chosen < 0 ? nil : chosen }
+        return autoKeyboardChannel(forMouse: channel)
+    }
+
+    // 自動對應：鍵盤上有同名（同名多個時再比連線方式）的頻道就用它，否則用同一個頻道號。
+    // Bolt 配對的頻道在鍵盤上常記成「Logitech Bolt receiver」，名稱對不起來，所以要退回頻道號。
+    func autoKeyboardChannel(forMouse channel: Int) -> Int? {
+        guard let kb = keyboardSnapshot, !kb.hosts.isEmpty else { return channel }
+        let mouseHost = hosts.first { $0.index == channel }
+        if let name = mouseHost?.name, !name.isEmpty {
+            var same = kb.hosts.filter { $0.paired && $0.name == name }
+            if same.count > 1, let bus = mouseHost?.bus { same = same.filter { $0.bus == bus } }
+            if same.count == 1 { return same[0].index }
+        }
+        guard let host = kb.hosts.first(where: { $0.index == channel }), host.paired else { return nil }
+        return host.index
+    }
+
+    func setKeyboardChannel(forMouse channel: Int, _ value: Int?) {
+        config.keyboard.channels[String(channel)] = value
+    }
+
+    func keyboardHostTitle(_ index: Int) -> String {
+        let name = keyboardSnapshot?.hosts.first { $0.index == index }?.name ?? ""
+        let channel = Lang.t("頻道 \(index + 1)", "Channel \(index + 1)")
+        return name.isEmpty ? channel : channel + " · " + name
+    }
+
+    private func switchKeyboard(withMouseChannel channel: Int) {
+        guard config.keyboard.followSwitch, let kb = keyboardSnapshot else { return }
+        guard let target = keyboardChannel(forMouse: channel) else {
+            log("Keyboard stays (mouse channel \(channel) has no keyboard channel)")
+            return
+        }
+        guard target != kb.currentHost else { return }
+        keyboard.changeHost(target) { [weak self] sent in
+            self?.log("Keyboard switch host -> \(target) sent=\(sent)")
+        }
+    }
+
+    func refreshKeyboard() { keyboard.refresh() }
+
+    // 套用一項鍵盤設定；鍵盤回讀確認才顯示已套用。設定存在鍵盤裡，不寫進設定檔。
+    func applyKeyboard(_ name: String, _ operation: @escaping (KeyboardHIDPP) -> Bool) {
+        keyboardMessage = Lang.t("套用中…", "Applying…")
+        keyboard.write(operation) { [weak self] ok in
+            guard let self else { return }
+            self.log("Keyboard set \(name) verified=\(ok)")
+            self.keyboardMessage = name + (ok ? Lang.t("：已套用", ": applied") : Lang.t("：鍵盤沒有確認，未套用", ": not confirmed by the keyboard"))
         }
     }
 

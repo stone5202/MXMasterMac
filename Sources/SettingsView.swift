@@ -5,7 +5,7 @@ import UserNotifications
 // MARK: - 共用外觀
 
 enum Page: Int, CaseIterable {
-    case buttons, ring, device, haptics, switching, advanced
+    case buttons, ring, device, haptics, switching, keyboard, advanced
 
     var title: String {
         switch self {
@@ -14,6 +14,7 @@ enum Page: Int, CaseIterable {
         case .device: return Lang.t("指標與滾輪", "Pointer & Wheel")
         case .haptics: return Lang.t("觸覺回饋", "Haptics")
         case .switching: return "MX Flow"
+        case .keyboard: return Lang.t("鍵盤", "Keyboard")
         case .advanced: return Lang.t("進階", "Advanced")
         }
     }
@@ -25,6 +26,7 @@ enum Page: Int, CaseIterable {
         case .device: return Lang.t("調整指標速度、精準模式與滾輪", "Tune pointer speed, precision mode and the wheel")
         case .haptics: return Lang.t("設定震動強度，以及哪些操作要讓滑鼠輕震一下", "Set the strength and choose which moments make the mouse tap")
         case .switching: return Lang.t("把游標推到螢幕邊緣，滑鼠就切到另一台電腦", "Push the pointer against a screen edge to move the mouse to another computer")
+        case .keyboard: return Lang.t("Logitech 鍵盤的電量、背光與 F 鍵，以及跟著滑鼠切換電腦", "Battery, backlight and F-keys of a Logitech keyboard, and switching computers with the mouse")
         case .advanced: return Lang.t("啟動方式、電池提醒、權限與工程模式", "Start-up, battery alerts, permissions and engineering mode")
         }
     }
@@ -36,6 +38,7 @@ enum Page: Int, CaseIterable {
         case .device: return "slider.horizontal.3"
         case .haptics: return "hand.tap"
         case .switching: return "rectangle.on.rectangle"
+        case .keyboard: return "keyboard"
         case .advanced: return "gearshape"
         }
     }
@@ -191,14 +194,13 @@ struct SettingsView: View {
                 Spacer()
             }
             if let snapshot = model.snapshot, snapshot.batteryPercent >= 0 {
-                HStack(spacing: 8) {
-                    Image(systemName: batterySymbol(snapshot)).font(.system(size: 15))
-                        .foregroundStyle(snapshot.batteryPercent <= 15 ? Color.red : Color.green)
-                    Text("\(snapshot.batteryPercent)%").font(.system(size: 13, weight: .semibold)).monospacedDigit()
-                    Text(snapshot.transport == "BOLT" ? "Logi Bolt" : "Bluetooth")
-                        .font(.system(size: 11.5)).foregroundStyle(.secondary)
-                    Spacer()
-                }
+                batteryRow(device: "computermouse", percent: snapshot.batteryPercent, charging: snapshot.charging,
+                           detail: snapshot.transport == "BOLT" ? "Logi Bolt" : "Bluetooth")
+            }
+            // 鍵盤連到這台電腦時多一列；鍵盤名稱太長，只標連線方式。
+            if let kb = model.keyboardSnapshot, kb.batteryPercent >= 0 {
+                batteryRow(device: "keyboard", percent: kb.batteryPercent, charging: kb.charging,
+                           detail: kb.transport == "BOLT" ? "Logi Bolt" : "Bluetooth")
             }
             Divider()
             Toggle(isOn: Binding(get: { model.enabled }, set: { model.setEnabled($0) })) {
@@ -211,9 +213,21 @@ struct SettingsView: View {
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.05)))
     }
 
-    private func batterySymbol(_ snapshot: DeviceSnapshot) -> String {
-        if snapshot.charging { return "battery.100percent.bolt" }
-        switch snapshot.batteryPercent {
+    // 左下角的一列電量：裝置圖示、電池、百分比、連線方式。
+    private func batteryRow(device: String, percent: Int, charging: Bool, detail: String) -> some View {
+        HStack(spacing: 8) {
+            Image(systemName: device).font(.system(size: 12)).foregroundStyle(.secondary).frame(width: 18)
+            Image(systemName: batterySymbol(percent: percent, charging: charging)).font(.system(size: 15))
+                .foregroundStyle(percent <= 15 && !charging ? Color.red : Color.green)
+            Text("\(percent)%").font(.system(size: 13, weight: .semibold)).monospacedDigit()
+            Text(detail).font(.system(size: 11.5)).foregroundStyle(.secondary)
+            Spacer()
+        }
+    }
+
+    private func batterySymbol(percent: Int, charging: Bool) -> String {
+        if charging { return "battery.100percent.bolt" }
+        switch percent {
         case 88...: return "battery.100percent"
         case 63...: return "battery.75percent"
         case 38...: return "battery.50percent"
@@ -255,7 +269,8 @@ struct SettingsView: View {
                     case .ring: RingPage(model: model, page: $page)
                     case .device: DevicePage(model: model, page: $page)
                     case .haptics: HapticsPage(model: model)
-                    case .switching: SwitchPage(model: model)
+                    case .switching: SwitchPage(model: model, page: $page)
+                    case .keyboard: KeyboardPage(model: model, page: $page)
                     case .advanced: AdvancedPage(model: model)
                     }
                 }
@@ -1046,6 +1061,7 @@ struct HapticEventRow: View {
 
 struct SwitchPage: View {
     @ObservedObject var model: AppModel
+    @Binding var page: Page
 
     private var ready: Bool {
         if case .ready = model.status { return true }
@@ -1126,7 +1142,9 @@ struct SwitchPage: View {
             }
             .disabled(!model.config.edgeSwitch.enabled).opacity(model.config.edgeSwitch.enabled ? 1 : 0.45)
         }
-        .onAppear { model.refreshHosts() }
+        .onAppear { model.refreshHosts(); model.refreshKeyboard() }
+
+        KeyboardFollowCard(model: model, page: $page, channels: channels)
 
         Card(title: Lang.t("Easy-Switch 頻道", "Easy-Switch channels"),
              subtitle: Lang.t("滑鼠記錄的三個連線對象；名稱由各電腦上的軟體寫入，可能是空的或舊的",
@@ -1150,10 +1168,199 @@ struct SwitchPage: View {
                         .controlSize(.small).disabled(host.index == model.currentHost || !host.paired || !ready)
                 }
             }
-            Text(Lang.t("切過去之後，另一台電腦也要執行本程式並設定邊緣，才能用同樣方式切回來；否則請按滑鼠底部的 Easy-Switch 鍵。不會傳送剪貼簿或檔案，鍵盤也不會跟著切換。",
-                        "To come back the same way, the other computer must also run this app with an edge set; otherwise press the Easy-Switch button under the mouse. No clipboard or files are transferred, and the keyboard does not follow."))
+            Text(Lang.t("切過去之後，另一台電腦也要執行本程式並設定邊緣，才能用同樣方式切回來；否則請按滑鼠底部的 Easy-Switch 鍵。不會傳送剪貼簿或檔案。",
+                        "To come back the same way, the other computer must also run this app with an edge set; otherwise press the Easy-Switch button under the mouse. No clipboard or files are transferred."))
                 .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
         }
+    }
+}
+
+// MX Flow 頁：滑鼠切換時鍵盤一起切，以及每個滑鼠頻道對應到鍵盤的哪個頻道。
+struct KeyboardFollowCard: View {
+    @ObservedObject var model: AppModel
+    @Binding var page: Page
+    let channels: [Int]
+
+    private var keyboardChannels: [Int] {
+        guard let kb = model.keyboardSnapshot, !kb.hosts.isEmpty else { return [0, 1, 2] }
+        return kb.hosts.map(\.index)
+    }
+
+    private func autoTitle(_ channel: Int) -> String {
+        guard let target = model.autoKeyboardChannel(forMouse: channel) else { return Lang.t("自動（不切換鍵盤）", "Auto (keyboard stays)") }
+        return Lang.t("自動：", "Auto: ") + model.keyboardHostTitle(target)
+    }
+
+    var body: some View {
+        Card(title: Lang.t("鍵盤一起切換", "Keyboard follows"),
+             subtitle: Lang.t("滑鼠切到另一台電腦時，Logitech 鍵盤也切到對應的 Easy-Switch 頻道（MX Flow、「切換到頻道」動作與下方按鈕都適用）",
+                              "When the mouse moves to another computer, the Logitech keyboard moves to the matching Easy-Switch channel (MX Flow, Switch-to-channel actions and the buttons below)")) {
+            SettingRow(title: Lang.t("滑鼠切換時鍵盤一起切換", "Switch the keyboard with the mouse"),
+                       subtitle: model.keyboardSnapshot.map { Lang.t("已連上：", "Connected: ") + ($0.name.isEmpty ? Lang.t("鍵盤", "Keyboard") : $0.name) }
+                        ?? Lang.t("沒有偵測到以藍牙連到這台電腦的 Logitech 鍵盤", "No Logitech keyboard connected to this computer over Bluetooth")) {
+                Toggle("", isOn: $model.config.keyboard.followSwitch).toggleStyle(.switch).labelsHidden()
+            }
+            Divider()
+            VStack(spacing: 8) {
+                ForEach(channels, id: \.self) { channel in
+                    HStack(spacing: 10) {
+                        Image(systemName: "computermouse").font(.system(size: 12)).foregroundStyle(Color.accentColor).frame(width: 22)
+                        Text(model.hostTitle(channel)).font(.system(size: 13)).lineLimit(1)
+                        Spacer(minLength: 8)
+                        Image(systemName: "arrow.right").font(.system(size: 11)).foregroundStyle(.secondary)
+                        Image(systemName: "keyboard").font(.system(size: 12)).foregroundStyle(Color.accentColor)
+                        Picker("", selection: Binding(get: { model.config.keyboard.channels[String(channel)] ?? -2 },
+                                                      set: { model.setKeyboardChannel(forMouse: channel, $0 == -2 ? nil : $0) })) {
+                            Text(autoTitle(channel)).tag(-2)
+                            ForEach(keyboardChannels, id: \.self) { index in
+                                Text(model.keyboardHostTitle(index)).tag(index)
+                            }
+                            Text(Lang.t("不切換鍵盤", "Keyboard stays")).tag(-1)
+                        }
+                        .labelsHidden().frame(width: 250)
+                    }
+                }
+            }
+            .disabled(!model.config.keyboard.followSwitch).opacity(model.config.keyboard.followSwitch ? 1 : 0.45)
+            Text(Lang.t("自動：鍵盤上有同名電腦的頻道就用它，否則用同一個頻道號。用 Bolt 接收器配對的頻道，鍵盤常記成「Logitech Bolt receiver」，請手動指定。要用同樣方式切回來，另一台電腦也要執行有這項功能的版本；否則請按鍵盤上的 Easy-Switch 鍵。",
+                        "Auto uses the keyboard channel with the same computer name, otherwise the same channel number. Channels paired through a Bolt receiver are often stored as \"Logitech Bolt receiver\" on the keyboard; choose them by hand. To come back the same way the other computer must run a version with this feature; otherwise press the Easy-Switch key on the keyboard."))
+                .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            if model.keyboardSnapshot != nil {
+                Button(Lang.t("鍵盤設定…", "Keyboard settings…")) { page = .keyboard }.controlSize(.small)
+            }
+        }
+    }
+}
+
+// 鍵盤頁：狀態三格、背光、F 鍵、頻道。設定存在鍵盤上，不寫進設定檔。
+struct KeyboardPage: View {
+    @ObservedObject var model: AppModel
+    @Binding var page: Page
+    @State private var level = 0.0
+
+    private func batteryText(_ kb: KeyboardSnapshot) -> String {
+        guard kb.batteryPercent >= 0 else { return "—" }
+        return "\(kb.batteryPercent)%" + (kb.charging ? Lang.t("（充電中）", " (charging)") : "")
+    }
+
+    private func batterySymbol(_ kb: KeyboardSnapshot) -> String {
+        if kb.charging { return "battery.100percent.bolt" }
+        switch kb.batteryPercent {
+        case 88...: return "battery.100percent"
+        case 63...: return "battery.75percent"
+        case 38...: return "battery.50percent"
+        case 13...: return "battery.25percent"
+        default: return "battery.0percent"
+        }
+    }
+
+    // 背光選單的值：-1 關閉、1 自動、3 手動；其他是鍵盤自己的模式。
+    private func backlightChoice(_ kb: KeyboardSnapshot) -> Int { kb.backlightEnabled ? kb.backlightMode : -1 }
+
+    var body: some View {
+        Group {
+            if let kb = model.keyboardSnapshot {
+                Text(kb.name.isEmpty ? Lang.t("Logitech 鍵盤", "Logitech keyboard") : kb.name)
+                    .font(.system(size: 15, weight: .semibold)).padding(.horizontal, 4)
+                HStack(spacing: 12) {
+                    StatTile(symbol: "wave.3.right", title: Lang.t("連線", "Connection"), value: "Bluetooth")
+                    StatTile(symbol: batterySymbol(kb), title: Lang.t("電量", "Battery"), value: batteryText(kb))
+                    StatTile(symbol: "cpu", title: Lang.t("韌體", "Firmware"), value: kb.firmware.isEmpty ? "—" : kb.firmware)
+                }
+
+                if kb.backlightPresent {
+                    Card(title: Lang.t("背光", "Backlight")) {
+                        SettingRow(title: Lang.t("背光模式", "Backlight mode"),
+                                   subtitle: Lang.t("自動：手靠近時亮起，亮度跟著環境光調整；手動：固定亮度",
+                                                    "Auto: lights up as your hands approach and follows ambient light; Manual: fixed brightness")) {
+                            Picker("", selection: Binding(get: { backlightChoice(kb) }, set: { choice in
+                                let enabled = choice != -1
+                                let mode = enabled ? choice : kb.backlightMode
+                                // 背光關閉時鍵盤回報亮度 0；改成手動時用中間亮度，免得看起來沒亮。
+                                let value = level >= 1 ? Int(level.rounded()) : max(1, kb.backlightLevels / 2)
+                                model.applyKeyboard(Lang.t("背光", "Backlight")) { $0.setBacklight(enabled: enabled, mode: mode, level: value) }
+                            })) {
+                                if kb.backlightAuto { Text(Lang.t("自動", "Auto")).tag(1) }
+                                if kb.backlightManual { Text(Lang.t("手動", "Manual")).tag(3) }
+                                if kb.backlightEnabled && kb.backlightMode != 1 && kb.backlightMode != 3 {
+                                    Text(Lang.t("鍵盤預設", "Keyboard default")).tag(kb.backlightMode)
+                                }
+                                Text(Lang.t("關閉", "Off")).tag(-1)
+                            }
+                            .pickerStyle(.segmented).labelsHidden().frame(width: 220)
+                        }
+                        if kb.backlightEnabled && kb.backlightMode == 3 && kb.backlightLevels > 1 {
+                            HStack(spacing: 14) {
+                                Text(Lang.t("亮度", "Brightness")).font(.system(size: 13)).frame(width: 86, alignment: .leading)
+                                Image(systemName: "sun.min").foregroundStyle(.secondary)
+                                Slider(value: $level, in: 0...Double(kb.backlightLevels - 1), step: 1) { editing in
+                                    guard !editing else { return }
+                                    let value = Int(level.rounded())
+                                    guard value != kb.backlightLevel else { return }
+                                    model.applyKeyboard(Lang.t("背光亮度", "Backlight brightness")) { $0.setBacklight(enabled: true, mode: 3, level: value) }
+                                }
+                                Image(systemName: "sun.max").foregroundStyle(.secondary)
+                                Text("\(Int(level.rounded()))").font(.system(size: 13, weight: .semibold)).monospacedDigit().frame(width: 28, alignment: .trailing)
+                            }
+                        }
+                    }
+                }
+
+                if kb.fnPresent {
+                    Card(title: Lang.t("F 鍵", "F-keys"),
+                         subtitle: Lang.t("每個 Easy-Switch 頻道各自記錄；這裡改的是這台電腦的頻道",
+                                          "Stored per Easy-Switch channel; this changes the channel of this computer")) {
+                        SettingRow(title: Lang.t("最上排按鍵預設", "Top row by default"),
+                                   subtitle: Lang.t("另一種功能要按住 Fn 再按", "Hold Fn for the other function")) {
+                            Picker("", selection: Binding(get: { kb.fnMediaFirst }, set: { value in
+                                model.applyKeyboard(Lang.t("F 鍵", "F-keys")) { $0.setFnMediaFirst(value) }
+                            })) {
+                                Text(Lang.t("媒體鍵", "Media keys")).tag(true)
+                                Text("F1–F12").tag(false)
+                            }
+                            .pickerStyle(.segmented).labelsHidden().frame(width: 200)
+                        }
+                    }
+                }
+
+                Card(title: Lang.t("Easy-Switch 頻道", "Easy-Switch channels"),
+                     subtitle: Lang.t("鍵盤記錄的連線對象；滑鼠切換時要不要帶鍵盤，在 MX Flow 頁設定",
+                                      "The hosts stored on the keyboard; whether it follows the mouse is set on the MX Flow page")) {
+                    ForEach(kb.hosts, id: \.index) { host in
+                        HStack(spacing: 10) {
+                            NumberBadge(text: "\(host.index + 1)", active: host.index == kb.currentHost)
+                            VStack(alignment: .leading, spacing: 1) {
+                                Text(host.name.isEmpty ? Lang.t("（沒有名稱）", "(no name)") : host.name).font(.system(size: 13))
+                                Text([host.busName, host.paired ? "" : Lang.t("未配對", "Not paired"),
+                                      host.index == kb.currentHost ? Lang.t("目前使用中", "In use now") : ""]
+                                    .filter { !$0.isEmpty }.joined(separator: " · "))
+                                    .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            }
+                            Spacer()
+                        }
+                    }
+                    Button(Lang.t("MX Flow 設定…", "MX Flow settings…")) { page = .switching }.controlSize(.small)
+                }
+            } else {
+                Card {
+                    Text(Lang.t("沒有偵測到以藍牙連到這台電腦的 Logitech 鍵盤。鍵盤切到別台電腦、睡眠或關機時也會這樣；按一下鍵盤任一鍵後再重新讀取。目前還不支援經 Bolt 接收器連線的鍵盤。",
+                                "No Logitech keyboard is connected to this computer over Bluetooth. This also happens while it is on another computer, asleep or off; press a key and reload. Keyboards on a Bolt receiver are not supported yet."))
+                        .font(.system(size: 12.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            }
+
+            HStack {
+                Text(model.keyboardMessage.isEmpty
+                     ? Lang.t("設定存在鍵盤上，由鍵盤確認後才算套用。", "Settings live on the keyboard and count as applied once it confirms them.")
+                     : model.keyboardMessage)
+                    .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                Spacer()
+                Button(Lang.t("重新讀取", "Reload")) { model.refreshKeyboard() }.controlSize(.small)
+            }
+            .padding(.horizontal, 4)
+        }
+        .onAppear { model.keyboardMessage = ""; model.refreshKeyboard(); level = Double(model.keyboardSnapshot?.backlightLevel ?? 0) }
+        .onChange(of: model.keyboardSnapshot?.backlightLevel) { level = Double(model.keyboardSnapshot?.backlightLevel ?? 0) }
     }
 }
 
