@@ -17,6 +17,11 @@ struct KeyboardSnapshot: Equatable {
     var backlightLevels = 0          // 手動亮度可選的段數（0…段數-1）
     var backlightAuto = false        // 支援自動（感應手靠近與環境光）
     var backlightManual = false      // 支援固定亮度
+    var disabledKeysMask = 0
+    var disabledKeys = 0
+    var platforms: [SolaarFeatures.Platform] = []
+    var currentPlatform = -1
+    var backlightDelays: [Int] = []
     var fnPresent = false
     var fnMediaFirst = true          // true：F 鍵預設是媒體鍵，按住 Fn 才是 F1–F12
 }
@@ -42,7 +47,9 @@ final class KeyboardHIDPP {
     private var candidates: [IOHIDDevice] = []
     private var rejected: [IOHIDDevice] = []    // 問過、確定不是鍵盤的介面
     private var featureIndexes: [Int: UInt8] = [:]
+    private var featureVersions: [Int: Int] = [:]
     private var stopped = false
+    private var hostNameTried = false       // 這次連線已經試過寫入頻道名稱
 
     private let lock = NSLock()
     private var pendingKey: (UInt8, UInt8)?
@@ -150,6 +157,8 @@ final class KeyboardHIDPP {
     private func reset() {
         device = nil
         featureIndexes.removeAll()
+        featureVersions.removeAll()
+        hostNameTried = false
     }
 
     private func received(_ source: IOHIDDevice, _ bytes: [UInt8]) {
@@ -239,6 +248,36 @@ final class KeyboardHIDPP {
         return Int((check[5] >> 3) & 0x03) == mode && (mode != 3 || check[9] == value)
     }
 
+    func setDisabledKey(bit: Int, disabled: Bool) -> Bool {
+        guard let packet = SolaarFeatures.disabledKey(call(0x4521, 0), call(0x4521, 1), bit: bit, disabled: disabled),
+              call(0x4521, 2, packet) != nil else { return false }
+        return SolaarFeatures.matches(call(0x4521, 1), packet)
+    }
+
+    private func readPlatforms(_ info: [UInt8]) -> [SolaarFeatures.Platform] {
+        guard info.count >= 11, info[4] & 2 != 0 else { return [] }
+        var descriptors: [[UInt8]] = []
+        for i in 0..<Int(info[6]) {
+            guard let descriptor = call(0x4531, 1, [UInt8(i)]) else { return [] }
+            descriptors.append(descriptor)
+        }
+        return SolaarFeatures.platforms(descriptors)
+    }
+
+    func setPlatform(_ value: Int) -> Bool {
+        guard let host = call(0x1814, 0), let info = call(0x4531, 0),
+              let packet = SolaarFeatures.platformWrite(info, choices: readPlatforms(info), selected: value),
+              call(0x4531, 3, packet) != nil, let after = call(0x1814, 0) else { return false }
+        return SolaarFeatures.platformMatches(call(0x4531, 0), selected: value, beforeHost: Int(host[5]), afterHost: Int(after[5]))
+    }
+
+    func setBacklightDelay(field: Int, seconds: Int) -> Bool {
+        guard let current = call(0x1982, 0),
+              let packet = SolaarFeatures.backlightDelay(current, version: featureVersions[0x1982] ?? 0, field: field, seconds: seconds),
+              call(0x1982, 1, packet) != nil else { return false }
+        return SolaarFeatures.backlightMatches(call(0x1982, 0), packet)
+    }
+
     // F 鍵：mediaFirst = true 時 F 鍵預設是媒體鍵。0xFF 表示目前連線的這台電腦（每個頻道各自記錄）。
     func setFnMediaFirst(_ mediaFirst: Bool) -> Bool {
         guard call(0x40A3, 1, [0xFF, mediaFirst ? 1 : 0]) != nil,
@@ -281,17 +320,12 @@ final class KeyboardHIDPP {
                 if let host = call(0x1815, 1, [UInt8(index)]) {
                     entry.paired = host[5] != 0
                     entry.bus = Int(host[6])
-                    let length = Int(host[8])
-                    var name: [UInt8] = []
-                    while name.count < length {
-                        guard let piece = call(0x1815, 3, [UInt8(index), UInt8(name.count)]) else { break }
-                        let chunk = Array(piece[6..<20].prefix(length - name.count))
-                        if chunk.isEmpty { break }
-                        name += chunk
-                    }
-                    entry.name = String(bytes: name, encoding: .utf8) ?? ""
+                    entry.name = hostName(index, length: Int(host[8]))
                 }
                 s.hosts.append(entry)
+            }
+            if !hostNameTried, s.hosts.indices.contains(s.currentHost), let written = writeHostName(s.currentHost, stored: s.hosts[s.currentHost].name) {
+                s.hosts[s.currentHost].name = written
             }
         }
         if let reply = call(0x1982, 0) {
@@ -303,11 +337,51 @@ final class KeyboardHIDPP {
             s.backlightLevel = Int(reply[9])
             if let levels = call(0x1982, 2) { s.backlightLevels = Int(levels[4]) }
         }
+        if let caps = call(0x4521, 0), let state = call(0x4521, 1) {
+            s.disabledKeysMask = Int(caps[4])
+            s.disabledKeys = Int(state[4])
+        }
+        if let info = call(0x4531, 0) {
+            s.platforms = readPlatforms(info)
+            s.currentPlatform = Int(info[10])
+        }
+        if featureVersions[0x1982, default: 0] >= 3, let light = call(0x1982, 0) {
+            s.backlightDelays = (0..<3).compactMap { SolaarFeatures.duration(light, field: $0) }
+        }
         if let reply = call(0x40A3, 0, [0xFF]) {
             s.fnPresent = true
             s.fnMediaFirst = reply[5] != 0
         }
         return s
+    }
+
+    private func hostName(_ index: Int, length: Int) -> String {
+        var name: [UInt8] = []
+        while name.count < length {
+            guard let piece = call(0x1815, 3, [UInt8(index), UInt8(name.count)]) else { break }
+            let chunk = Array(piece[6..<20].prefix(length - name.count))
+            if chunk.isEmpty { break }
+            name += chunk
+        }
+        return String(bytes: name, encoding: .utf8) ?? ""
+    }
+
+    // 目前頻道的名稱和這台電腦不同就寫入電腦名稱（見 HostName.swift），回讀確認；每次連線最多試一次。
+    private func writeHostName(_ current: Int, stored: String) -> String? {
+        hostNameTried = true
+        let computer = HostName.computerName
+        guard let caps = call(0x1815, 0), let info = call(0x1815, 1, [UInt8(current)]),
+              HostName.needsWrite(capabilities: caps[4], stored: stored, computer: computer, maxLength: Int(info[9])) else { return nil }
+        for packet in HostName.writePackets(host: current, name: HostName.encode(computer, maxLength: Int(info[9]))) {
+            guard call(0x1815, 4, packet) != nil else {
+                log("host name write failed")
+                return nil
+            }
+        }
+        guard let after = call(0x1815, 1, [UInt8(current)]) else { return nil }
+        let now = hostName(current, length: Int(after[8]))
+        log("host name of channel \(current + 1) written: " + (HostName.same(now, String(decoding: HostName.encode(computer, maxLength: Int(info[9])), as: UTF8.self)) ? "confirmed" : "not confirmed"))
+        return now
     }
 
     // MARK: - 傳輸（work 佇列）
@@ -316,6 +390,7 @@ final class KeyboardHIDPP {
         if let cached = featureIndexes[feature] { return cached == 0 ? nil : cached }
         guard let root = request(0, 0, [UInt8(feature >> 8), UInt8(feature & 0xFF), 0], timeout: 1.8) else { return nil }
         featureIndexes[feature] = root[4]
+        featureVersions[feature] = Int(root[6])
         return root[4] == 0 ? nil : root[4]
     }
 

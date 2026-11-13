@@ -4,6 +4,14 @@
   <a href="CHANGELOG.md">繁體中文</a> · <strong>English</strong>
 </p>
 
+## 2.4 — 2026-11-14
+
+- New Receiver page (between Keyboard and Advanced): pair a new mouse or keyboard with a Logi Bolt receiver (including the passkey typed on a keyboard or clicked on a mouse), list the paired devices and unpair them, without installing Logi Bolt or Logi Options+. Before unpairing, the app checks that the slot still holds the same device; with more than one receiver plugged in, receivers are shown but not changed.
+- When the channel a mouse or keyboard uses for this computer stores a different name (a channel paired through Logi Bolt is stored as "Logitech Bolt receiver", for one), this computer's name is written to the device, so MX Flow shows the right computer and the keyboard-follows matching is more accurate (as Logi Options+ does; only the current channel is written).
+- Pointer & Wheel: new ratchet torque (1–100), device-side thumb-wheel inversion (the left/right action mappings stay as they are) and high resolution for the main wheel (scrolling may become faster). Shown only when the device supports them; applied values are saved and re-applied when the mouse reconnects.
+- Keyboard page: new switches for the keys the keyboard allows to disable (Caps Lock, for one), the OS layout for the current Easy-Switch channel, and backlight delays for hands away, hands near and external power (1–600 seconds, in 5-second steps).
+- Every new setting is read back after writing, and other settings in the same group are left untouched.
+
 ## 2.3.1 — 2026-11-14
 
 - Fix: with the mouse and a Logitech keyboard that supports button diversion (an MX Mechanical, for one) on the same Logi Bolt receiver and the keyboard in an earlier slot, the app took the keyboard for the mouse and never connected to the mouse. The device type is now checked and slots that are not a mouse are skipped.

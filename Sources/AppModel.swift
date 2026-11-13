@@ -5,7 +5,7 @@ import UserNotifications
 
 // 全部的執行期狀態與輸入處理邏輯；只在主執行緒使用。
 final class AppModel: ObservableObject {
-    static let version = "2.3.1"
+    static let version = "2.4"
 
     @Published var config: Config { didSet { configChanged() } }
     @Published var status: DeviceStatus = .searching
@@ -25,9 +25,12 @@ final class AppModel: ObservableObject {
     @Published var notificationStatus: UNAuthorizationStatus = .notDetermined
     @Published var keyboardSnapshot: KeyboardSnapshot?     // nil：沒有連上 Logitech 鍵盤
     @Published var keyboardMessage = ""
+    @Published var receiver = BoltReceiverSnapshot()       // Logi Bolt 接收器（配對頁）
+    @Published var receiverMessage = ""
 
     let hidpp = HIDPP()
     let keyboard = KeyboardHIDPP()
+    let bolt = BoltReceiver()
     private let tap = EventTap()
     private let ring = RingOverlay()
     private let hud = GestureHUD()
@@ -114,9 +117,14 @@ final class AppModel: ObservableObject {
             }
             self?.keyboardSnapshot = snapshot
         }
+        bolt.onLog = { [weak self] in self?.log($0) }
+        bolt.onChange = { [weak self] in self?.receiver = $0 }
         if CommandLine.arguments.contains("--log") { setLogging(true) }
         hidpp.start()
         keyboard.start()
+        // 啟動參數 -demoReceiver N：截圖或檢查版面用的假接收器（1 一般、2 搜尋中、3 鍵盤驗證碼、4 滑鼠驗證碼、5 成功、6 失敗）。
+        let demoReceiver = UserDefaults.standard.integer(forKey: "demoReceiver")
+        if demoReceiver > 0 { receiver = AppModel.demoReceiver(demoReceiver) } else { bolt.start() }
 
         tap.handler = { [weak self] in self?.tapEvent($0) ?? false }
         installTapIfPossible()
@@ -159,6 +167,7 @@ final class AppModel: ObservableObject {
         moveMonitors.removeAll()
         tap.remove()
         keyboard.stop()
+        bolt.stop()
         hidpp.shutdown()
     }
 
@@ -430,6 +439,44 @@ final class AppModel: ObservableObject {
     }
 
     func refreshKeyboard() { keyboard.refresh() }
+
+    // MARK: - Logi Bolt 接收器
+
+    func refreshReceiver() { bolt.refresh() }
+    func startPairing() { receiverMessage = ""; bolt.startPairing() }
+    func cancelPairing() { bolt.cancelPairing() }
+    func dismissPairingResult() { bolt.dismissResult() }
+
+    func unpair(_ slot: BoltSlot) {
+        receiverMessage = Lang.t("解除配對中…", "Unpairing…")
+        bolt.unpair(slot) { [weak self] result in
+            guard let self else { return }
+            let name = slot.name.isEmpty ? Lang.t("槽位 \(slot.slot)", "slot \(slot.slot)") : slot.name
+            switch result {
+            case .done: self.receiverMessage = Lang.t("已解除「\(name)」的配對", "Unpaired \(name)")
+            case .changed: self.receiverMessage = Lang.t("槽位 \(slot.slot) 的裝置已經變了，沒有解除；請看過清單再試",
+                                                         "Slot \(slot.slot) holds a different device now; nothing was unpaired. Check the list and try again")
+            case .failed: self.receiverMessage = Lang.t("接收器沒有確認，「\(name)」仍然配對著", "The receiver did not confirm; \(name) is still paired")
+            }
+        }
+    }
+
+    private static func demoReceiver(_ kind: Int) -> BoltReceiverSnapshot {
+        var demo = BoltReceiverSnapshot(present: true, slots: [
+            BoltSlot(slot: 1, kind: 2, wpid: "B042", serial: "00000000", name: "MX Master 4"),
+            BoltSlot(slot: 2, kind: 1, wpid: "B367", serial: "00000000", name: "MX MCHNCL M"),
+        ])
+        switch kind {
+        case 2: demo.phase = .searching
+        case 3: demo.phase = .passkey(code: "482913", name: "MX Keys S", keyboard: true)
+        case 4: demo.phase = .passkey(code: "000613", name: "MX Anywhere 3S", keyboard: false)
+        case 5: demo.phase = .succeeded(slot: 3, name: "MX Keys S")
+            demo.slots.append(BoltSlot(slot: 3, kind: 1, wpid: "B378", serial: "00000000", name: "MX Keys S"))
+        case 6: demo.phase = .failed(.notFound)
+        default: break
+        }
+        return demo
+    }
 
     // 套用一項鍵盤設定；鍵盤回讀確認才顯示已套用。設定存在鍵盤裡，不寫進設定檔。
     func applyKeyboard(_ name: String, _ operation: @escaping (KeyboardHIDPP) -> Bool) {

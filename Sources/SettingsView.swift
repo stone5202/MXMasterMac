@@ -5,7 +5,7 @@ import UserNotifications
 // MARK: - 共用外觀
 
 enum Page: Int, CaseIterable {
-    case buttons, ring, device, haptics, switching, keyboard, advanced
+    case buttons, ring, device, haptics, switching, keyboard, receiver, advanced
 
     var title: String {
         switch self {
@@ -15,6 +15,7 @@ enum Page: Int, CaseIterable {
         case .haptics: return Lang.t("觸覺回饋", "Haptics")
         case .switching: return "MX Flow"
         case .keyboard: return Lang.t("鍵盤", "Keyboard")
+        case .receiver: return Lang.t("接收器", "Receiver")
         case .advanced: return Lang.t("進階", "Advanced")
         }
     }
@@ -27,6 +28,7 @@ enum Page: Int, CaseIterable {
         case .haptics: return Lang.t("設定震動強度，以及哪些操作要讓滑鼠輕震一下", "Set the strength and choose which moments make the mouse tap")
         case .switching: return Lang.t("把游標推到螢幕邊緣，滑鼠就切到另一台電腦", "Push the pointer against a screen edge to move the mouse to another computer")
         case .keyboard: return Lang.t("Logitech 鍵盤的電量、背光與 F 鍵，以及跟著滑鼠切換電腦", "Battery, backlight and F-keys of a Logitech keyboard, and switching computers with the mouse")
+        case .receiver: return Lang.t("在 Logi Bolt 接收器上配對新的滑鼠或鍵盤，或解除配對", "Pair a mouse or keyboard with a Logi Bolt receiver, or unpair one")
         case .advanced: return Lang.t("啟動方式、電池提醒、權限與工程模式", "Start-up, battery alerts, permissions and engineering mode")
         }
     }
@@ -39,6 +41,7 @@ enum Page: Int, CaseIterable {
         case .haptics: return "hand.tap"
         case .switching: return "rectangle.on.rectangle"
         case .keyboard: return "keyboard"
+        case .receiver: return "antenna.radiowaves.left.and.right"
         case .advanced: return "gearshape"
         }
     }
@@ -271,6 +274,7 @@ struct SettingsView: View {
                     case .haptics: HapticsPage(model: model)
                     case .switching: SwitchPage(model: model, page: $page)
                     case .keyboard: KeyboardPage(model: model, page: $page)
+                    case .receiver: ReceiverPage(model: model)
                     case .advanced: AdvancedPage(model: model)
                     }
                 }
@@ -737,6 +741,7 @@ struct DevicePage: View {
     @State private var dpi = 1000.0
     @State private var precisionDpi = 400.0
     @State private var freeSpin = false
+    @State private var torque = 50.0
     @State private var threshold = 12.0
     @State private var autoShift = true
     @State private var inverted = false
@@ -819,7 +824,7 @@ struct DevicePage: View {
                     }
                 }
 
-                if snapshot.smartShiftPresent || snapshot.wheelInvertPresent {
+                if snapshot.smartShiftPresent || snapshot.wheelInvertPresent || snapshot.thumbInverted != nil {
                     Card(title: Lang.t("滾輪", "Wheel")) {
                         if snapshot.wheelInvertPresent {
                             SettingRow(title: Lang.t("捲動方向", "Scroll direction")) {
@@ -857,6 +862,36 @@ struct DevicePage: View {
                                     .frame(width: 34, alignment: .trailing)
                             }
                             .disabled(!autoShift).opacity(autoShift ? 1 : 0.45)
+                        }
+                        if snapshot.ratchetTorque != nil {
+                            Divider()
+                            HStack(spacing: 14) {
+                                Text(Lang.t("段落力道", "Ratchet torque")).font(.system(size: 13))
+                                Slider(value: $torque, in: 1...100) { editing in
+                                    if !editing {
+                                        let value = Int(torque.rounded())
+                                        model.applyDevice(Lang.t("段落力道", "Ratchet torque"), { $0.setRatchetTorque(value) }) { $0.ratchetTorque = value }
+                                    }
+                                }
+                                Text("\(Int(torque.rounded()))").monospacedDigit().frame(width: 34)
+                            }
+                        }
+                        if let value = snapshot.thumbInverted {
+                            Divider()
+                            SettingRow(title: Lang.t("拇指滾輪反轉", "Invert thumb wheel")) {
+                                Toggle("", isOn: Binding(get: { value }, set: { newValue in
+                                    model.applyDevice(Lang.t("拇指滾輪", "Thumb wheel"), { $0.setThumbInvert(newValue) }) { $0.thumbInvert = newValue }
+                                })).toggleStyle(.switch).labelsHidden()
+                            }
+                        }
+                        if let value = snapshot.hiresResolution {
+                            Divider()
+                            SettingRow(title: Lang.t("主滾輪高解析度", "High resolution wheel"),
+                                       subtitle: Lang.t("開啟後捲動可能變快", "Scrolling may become faster when enabled")) {
+                                Toggle("", isOn: Binding(get: { value }, set: { newValue in
+                                    model.applyDevice(Lang.t("高解析度滾輪", "High resolution wheel"), { $0.setHiresResolution(newValue) }) { $0.hiresResolution = newValue }
+                                })).toggleStyle(.switch).labelsHidden()
+                            }
                         }
                     }
                 }
@@ -906,6 +941,7 @@ struct DevicePage: View {
         freeSpin = snapshot.wheelMode == 1
         autoShift = snapshot.smartShift != 255 && snapshot.smartShift != 0
         if snapshot.smartShift >= 1 && snapshot.smartShift <= 50 { threshold = Double(snapshot.smartShift) }
+        if let value = snapshot.ratchetTorque { torque = Double(value) }
         inverted = snapshot.wheelInverted
         DispatchQueue.main.async { loaded = true }
     }
@@ -1303,8 +1339,18 @@ struct KeyboardPage: View {
                                 Text("\(Int(level.rounded()))").font(.system(size: 13, weight: .semibold)).monospacedDigit().frame(width: 28, alignment: .trailing)
                             }
                         }
+                        if kb.backlightDelays.count == 3 {
+                            Divider()
+                            ForEach(0..<3, id: \.self) { field in
+                                KeyboardDelayRow(model: model, field: field, current: kb.backlightDelays[field])
+                            }
+                            Text(Lang.t("1–600 秒；鍵盤以 5 秒為單位向上取整。", "1–600 seconds; rounded up to 5-second units by the keyboard."))
+                                .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                        }
                     }
                 }
+
+                KeyboardExtraSettings(model: model, kb: kb)
 
                 if kb.fnPresent {
                     Card(title: Lang.t("F 鍵", "F-keys"),
@@ -1361,6 +1407,62 @@ struct KeyboardPage: View {
         }
         .onAppear { model.keyboardMessage = ""; model.refreshKeyboard(); level = Double(model.keyboardSnapshot?.backlightLevel ?? 0) }
         .onChange(of: model.keyboardSnapshot?.backlightLevel) { level = Double(model.keyboardSnapshot?.backlightLevel ?? 0) }
+    }
+}
+
+private struct KeyboardDelayRow: View {
+    @ObservedObject var model: AppModel
+    let field: Int
+    let current: Int
+    @State private var seconds = 30
+    private var title: String {
+        [Lang.t("手離開", "Hands away"), Lang.t("手靠近", "Hands near"), Lang.t("接電源", "External power")][field]
+    }
+    var body: some View {
+        SettingRow(title: title, subtitle: Lang.t("目前：", "Current: ") + "\(current) " + Lang.t("秒", "seconds")) {
+            Stepper("\(seconds) " + Lang.t("秒", "s"), value: $seconds, in: 1...600).frame(width: 140)
+            Button(Lang.t("套用", "Apply")) {
+                let value = seconds
+                model.applyKeyboard(title) { $0.setBacklightDelay(field: field, seconds: value) }
+            }.controlSize(.small)
+        }
+        .onAppear { seconds = min(600, max(1, current)) }
+        .onChange(of: current) { seconds = min(600, max(1, current)) }
+    }
+}
+
+private struct KeyboardExtraSettings: View {
+    @ObservedObject var model: AppModel
+    let kb: KeyboardSnapshot
+    var body: some View {
+        if kb.disabledKeysMask != 0 {
+            Card(title: Lang.t("停用按鍵", "Disable keys")) {
+                ForEach(0..<8, id: \.self) { bit in
+                    if kb.disabledKeysMask & (1 << bit) != 0 {
+                        SettingRow(title: SolaarFeatures.disableName(bit)) {
+                            Toggle("", isOn: Binding(get: { kb.disabledKeys & (1 << bit) != 0 }, set: { value in
+                                model.applyKeyboard(SolaarFeatures.disableName(bit)) { $0.setDisabledKey(bit: bit, disabled: value) }
+                            })).toggleStyle(.switch).labelsHidden()
+                        }
+                    }
+                }
+            }
+        }
+        if !kb.platforms.isEmpty {
+            Card(title: Lang.t("作業系統配置", "Operating system layout"),
+                 subtitle: Lang.t("只變更目前 Easy-Switch 頻道", "Changes only the current Easy-Switch channel")) {
+                SettingRow(title: Lang.t("平台", "Platform")) {
+                    Picker("", selection: Binding(get: { kb.currentPlatform }, set: { value in
+                        model.applyKeyboard(Lang.t("作業系統配置", "OS layout")) { $0.setPlatform(value) }
+                    })) {
+                        if !kb.platforms.contains(where: { $0.id == kb.currentPlatform }) {
+                            Text(Lang.t("目前配置", "Current layout") + " (\(kb.currentPlatform))").tag(kb.currentPlatform)
+                        }
+                        ForEach(kb.platforms) { choice in Text(choice.name).tag(choice.id) }
+                    }.labelsHidden().frame(width: 220)
+                }
+            }
+        }
     }
 }
 
@@ -1492,5 +1594,210 @@ struct AdvancedPage: View {
             Button(Lang.t("結束程式", "Quit")) { NSApp.terminate(nil) }
         }
         .padding(.horizontal, 4)
+    }
+}
+
+// MARK: - 接收器（Logi Bolt 配對）
+
+struct ReceiverPage: View {
+    @ObservedObject var model: AppModel
+    @State private var unpairTarget: BoltSlot?
+
+    private static let pointing: Set<Int> = [2, 8, 9]
+
+    private func kindName(_ kind: Int) -> String {
+        switch kind {
+        case 1: return Lang.t("鍵盤", "Keyboard")
+        case 2: return Lang.t("滑鼠", "Mouse")
+        case 3: return Lang.t("數字鍵盤", "Numpad")
+        case 4: return Lang.t("簡報器", "Presenter")
+        case 8: return Lang.t("軌跡球", "Trackball")
+        case 9: return Lang.t("觸控板", "Touchpad")
+        default: return Lang.t("裝置", "Device")
+        }
+    }
+
+    private func kindSymbol(_ kind: Int) -> String {
+        if ReceiverPage.pointing.contains(kind) { return "computermouse" }
+        if kind == 1 || kind == 3 { return "keyboard" }
+        return "dot.radiowaves.left.and.right"
+    }
+
+    private func displayName(_ slot: BoltSlot) -> String { slot.name.isEmpty ? kindName(slot.kind) : slot.name }
+
+    private func failureText(_ failure: BoltFailure) -> String {
+        switch failure {
+        case .noAnswer:
+            return Lang.t("接收器沒有接受配對指令。如果開著 Logi Options+ 或 Logi Bolt，請先結束再試一次。",
+                          "The receiver did not accept the pairing command. If Logi Options+ or Logi Bolt is running, quit it and try again.")
+        case .notFound:
+            return Lang.t("30 秒內沒有找到要配對的裝置。請長按頻道鍵，直到燈號快速閃爍。",
+                          "No device asked to pair within 30 seconds. Hold the channel button until the light blinks fast.")
+        case .timeout:
+            return Lang.t("驗證沒有在時間內完成。", "Authentication was not completed in time.")
+        case .failed:
+            return Lang.t("配對沒有完成，可能是驗證碼按錯了。請再試一次。", "Pairing did not complete; the code may have been entered wrong. Please try again.")
+        }
+    }
+
+    var body: some View {
+        Group {
+            if model.receiver.multiple {
+                Card(title: Lang.t("偵測到多個 Logi Bolt 接收器", "More than one Logi Bolt receiver found"),
+                     subtitle: Lang.t("請只留一個接收器插在這台 Mac，再配對或解除配對",
+                                      "Leave only one receiver plugged into this Mac to pair or unpair")) {
+                    EmptyView()
+                }
+            } else if model.receiver.present {
+                Text("Logi Bolt").font(.system(size: 15, weight: .semibold)).padding(.horizontal, 4)
+                pairingCard
+                pairedCard
+            } else {
+                Card(title: Lang.t("沒有偵測到 Logi Bolt 接收器", "No Logi Bolt receiver found"),
+                     subtitle: Lang.t("把接收器插到這台 Mac，這一頁就能配對新裝置或解除配對",
+                                      "Plug the receiver into this Mac to pair or unpair devices here")) {
+                    Text(Lang.t("只支援 Logi Bolt 接收器；Unifying 與 Lightspeed 接收器不支援。",
+                                "Only Logi Bolt receivers are supported, not Unifying or Lightspeed."))
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+            }
+        }
+        .onAppear { model.refreshReceiver() }
+        .alert(unpairTarget.map { Lang.t("解除「\(displayName($0))」的配對？", "Unpair \(displayName($0))?") } ?? "",
+               isPresented: Binding(get: { unpairTarget != nil }, set: { if !$0 { unpairTarget = nil } }),
+               presenting: unpairTarget) { slot in
+            Button(Lang.t("解除配對", "Unpair"), role: .destructive) { model.unpair(slot) }
+            Button(Lang.t("取消", "Cancel"), role: .cancel) {}
+        } message: { slot in
+            Text(unpairWarning(slot))
+        }
+    }
+
+    private func unpairWarning(_ slot: BoltSlot) -> String {
+        var text = Lang.t("裝置會從這個接收器斷線，要再用就得重新配對。",
+                          "The device disconnects from this receiver and has to be paired again to use it.")
+        if ReceiverPage.pointing.contains(slot.kind) {
+            text += Lang.t("如果這是你正在用的滑鼠，解除後游標會立刻不能動。", " If this is the mouse you are using, the pointer stops moving right away.")
+        } else if slot.kind == 1 {
+            text += Lang.t("如果這是你正在用的鍵盤，解除後會立刻不能打字。", " If this is the keyboard you are using, typing stops right away.")
+        }
+        return text
+    }
+
+    @ViewBuilder private var pairingCard: some View {
+        Card(title: Lang.t("配對新裝置", "Pair a device"),
+             subtitle: Lang.t("讓滑鼠或鍵盤的一個 Easy-Switch 頻道改連到這個接收器",
+                              "Connect one Easy-Switch channel of a mouse or keyboard to this receiver")) {
+            switch model.receiver.phase {
+            case .idle:
+                VStack(alignment: .leading, spacing: 4) {
+                    Text(Lang.t("1. 按「開始配對」。", "1. Click Start Pairing."))
+                    Text(Lang.t("2. 30 秒內長按裝置上要用的 Easy-Switch 頻道鍵，直到燈號快速閃爍。",
+                                "2. Within 30 seconds, hold the Easy-Switch channel button you want to use until its light blinks fast."))
+                    Text(Lang.t("3. 照畫面上的指示完成驗證。", "3. Follow the on-screen instructions to authenticate."))
+                }
+                .font(.system(size: 12.5)).fixedSize(horizontal: false, vertical: true)
+                Text(Lang.t("配對會取代那個頻道原本的連線（例如原本以藍牙連到另一台電腦）。",
+                            "Pairing replaces whatever that channel was connected to before (for example Bluetooth to another computer)."))
+                    .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button(Lang.t("開始配對", "Start Pairing")) { model.startPairing() }
+                        .buttonStyle(.borderedProminent)
+                        .disabled(model.receiver.slots.count >= 6)
+                    if model.receiver.slots.count >= 6 {
+                        Text(Lang.t("6 個槽位都用完了，請先解除一個裝置的配對。", "All 6 slots are in use; unpair a device first."))
+                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    }
+                }
+            case .searching:
+                waiting(Lang.t("正在尋找裝置… 請長按要配對的頻道鍵，直到燈號快速閃爍。",
+                               "Looking for a device… Hold the channel button until its light blinks fast."))
+            case .pairing(let name, _):
+                waiting(Lang.t("找到「\(name)」，正在配對…", "Found \(name); pairing…"))
+            case .passkey(let code, let name, let keyboard):
+                if keyboard {
+                    Text(Lang.t("在「\(name)」上輸入下面的數字，再按 Enter：", "On \(name), type these digits and press Enter:"))
+                        .font(.system(size: 12.5))
+                    Text(code.map(String.init).joined(separator: " "))
+                        .font(.system(size: 30, weight: .bold, design: .monospaced)).padding(.vertical, 4)
+                } else {
+                    Text(Lang.t("在「\(name)」上依序按下面的按鍵，最後左右鍵一起按：",
+                                "On \(name), click these buttons in order, then press left and right together:"))
+                        .font(.system(size: 12.5)).fixedSize(horizontal: false, vertical: true)
+                    sequenceView(BoltPackets.mouseSequence(code))
+                }
+                Button(Lang.t("取消", "Cancel")) { model.cancelPairing() }
+            case .succeeded(let slot, let name):
+                Label(Lang.t("已配對「\(name)」（槽位 \(slot)）", "Paired \(name) (slot \(slot))"), systemImage: "checkmark.circle.fill")
+                    .font(.system(size: 13, weight: .semibold)).foregroundStyle(.green)
+                Text(Lang.t("裝置現在用剛才那個頻道連到這個接收器；要切回其他電腦時，按裝置上的 Easy-Switch 鍵。",
+                            "The device now uses that channel for this receiver; press its Easy-Switch button to go back to other computers."))
+                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Button(Lang.t("完成", "Done")) { model.dismissPairingResult() }
+            case .failed(let failure):
+                Label(failureText(failure), systemImage: "xmark.octagon.fill")
+                    .font(.system(size: 12.5)).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+                HStack {
+                    Button(Lang.t("再試一次", "Try Again")) { model.startPairing() }.buttonStyle(.borderedProminent)
+                    Button(Lang.t("關閉", "Close")) { model.dismissPairingResult() }
+                }
+            }
+        }
+    }
+
+    private func waiting(_ text: String) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            HStack(spacing: 10) {
+                ProgressView().controlSize(.small)
+                Text(text).font(.system(size: 12.5)).fixedSize(horizontal: false, vertical: true)
+            }
+            Button(Lang.t("取消", "Cancel")) { model.cancelPairing() }
+        }
+    }
+
+    private func sequenceView(_ sequence: [Bool]) -> some View {
+        HStack(spacing: 6) {
+            ForEach(Array(sequence.enumerated()), id: \.offset) { _, right in
+                Text(right ? Lang.t("右", "R") : Lang.t("左", "L"))
+                    .font(.system(size: 15, weight: .bold))
+                    .foregroundStyle(right ? Color.white : Color.accentColor)
+                    .frame(width: 30, height: 30)
+                    .background(RoundedRectangle(cornerRadius: 7).fill(right ? Color.accentColor : Color.clear))
+                    .overlay(RoundedRectangle(cornerRadius: 7).strokeBorder(Color.accentColor, lineWidth: 1.5))
+            }
+            Text(Lang.t("＋ 左右一起", "+ both")).font(.system(size: 12.5, weight: .semibold)).padding(.leading, 4)
+        }
+        .padding(.vertical, 4)
+    }
+
+    @ViewBuilder private var pairedCard: some View {
+        Card(title: Lang.t("已配對的裝置", "Paired devices"),
+             subtitle: Lang.t("已使用 \(model.receiver.slots.count)／6 個槽位", "\(model.receiver.slots.count) of 6 slots in use")) {
+            if model.receiver.slots.isEmpty {
+                Text(Lang.t("這個接收器還沒有配對任何裝置。", "No devices are paired with this receiver yet."))
+                    .font(.system(size: 12.5)).foregroundStyle(.secondary)
+            }
+            ForEach(model.receiver.slots) { slot in
+                HStack(spacing: 10) {
+                    NumberBadge(text: "\(slot.slot)")
+                    Image(systemName: kindSymbol(slot.kind)).font(.system(size: 15)).foregroundStyle(.secondary).frame(width: 22)
+                    VStack(alignment: .leading, spacing: 1) {
+                        Text(displayName(slot)).font(.system(size: 13, weight: .medium))
+                        Text(kindName(slot.kind) + " · WPID " + slot.wpid).font(.system(size: 11)).foregroundStyle(.secondary)
+                    }
+                    Spacer(minLength: 8)
+                    Button(Lang.t("解除配對", "Unpair")) { unpairTarget = slot }
+                        .disabled(model.receiver.phase.active)
+                }
+            }
+            if !model.receiverMessage.isEmpty {
+                Text(model.receiverMessage).font(.system(size: 11.5)).foregroundStyle(.secondary)
+            }
+            if model.receiver.slots.contains(where: { $0.kind == 1 }) {
+                Text(Lang.t("經接收器連線的鍵盤可以正常打字；「鍵盤」頁的電量、背光等設定目前只支援藍牙連線的鍵盤。",
+                            "A keyboard on the receiver types normally; the battery, backlight and other settings on the Keyboard page currently need a Bluetooth keyboard."))
+                    .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+        }
     }
 }

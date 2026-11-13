@@ -13,6 +13,9 @@ struct DeviceSnapshot {
     var wheelMode = 0            // 1 自由、2 段落
     var smartShift = 0
     var smartShiftPresent = false
+    var ratchetTorque: Int?
+    var thumbInverted: Bool?
+    var hiresResolution: Bool?
     var wheelInvertPresent = false
     var wheelInverted = false
     var hapticPresent = false
@@ -70,6 +73,7 @@ final class HIDPP {
     private var candidates: [IOHIDDevice] = []      // 目前在線、可講 HID++ 的介面（藍牙滑鼠或 Bolt 接收器）
     private var retryTimer: DispatchSourceTimer?
     private var isBolt = false
+    private var hostNameTried = false       // 這次連線已經試過寫入頻道名稱（work 佇列）
     private var deviceIndex: UInt8 = 0xFF
     private var reprogIndex: UInt8 = 0
     private var wirelessIndex: UInt8 = 0
@@ -333,6 +337,7 @@ final class HIDPP {
     }
 
     private func reset() {
+        hostNameTried = false
         device = nil
         deviceIndex = 0xFF
         reprogIndex = 0
@@ -507,6 +512,15 @@ final class HIDPP {
             if current.wheelInvertPresent, let invert = settings.wheelInvert, invert != current.wheelInverted {
                 results.append("restore wheel invert \(invert) verified=\(self.setWheelInvert(invert))")
             }
+            if let value = settings.ratchetTorque, current.ratchetTorque != nil, current.ratchetTorque != value {
+                results.append("restore ratchet torque \(value) verified=\(self.setRatchetTorque(value))")
+            }
+            if let value = settings.thumbInvert, current.thumbInverted != nil, current.thumbInverted != value {
+                results.append("restore thumb invert \(value) verified=\(self.setThumbInvert(value))")
+            }
+            if let value = settings.hiresResolution, current.hiresResolution != nil, current.hiresResolution != value {
+                results.append("restore high resolution \(value) verified=\(self.setHiresResolution(value))")
+            }
             if current.hapticPresent, let haptic = settings.haptic, haptic != current.hapticLevel {
                 results.append("restore haptic \(haptic) verified=\(self.setHaptic(haptic))")
             }
@@ -537,22 +551,46 @@ final class HIDPP {
                     if let host = self.call(0x1815, 1, [UInt8(index)]) {
                         entry.paired = host[5] != 0
                         entry.bus = Int(host[6])
-                        let length = Int(host[8])
-                        var name: [UInt8] = []
-                        while name.count < length {
-                            guard let piece = self.call(0x1815, 3, [UInt8(index), UInt8(name.count)]) else { break }
-                            let chunk = Array(piece[6..<20].prefix(length - name.count))
-                            if chunk.isEmpty { break }
-                            name += chunk
-                        }
-                        entry.name = String(bytes: name, encoding: .utf8) ?? ""
+                        entry.name = self.hostName(index, length: Int(host[8]))
                     }
                     hosts.append(entry)
+                }
+                if !self.hostNameTried, hosts.indices.contains(current), let written = self.writeHostName(current, stored: hosts[current].name) {
+                    hosts[current].name = written
                 }
                 self.log("hosts current=\(current) " + hosts.map { "\($0.index):\($0.name.isEmpty ? "-" : $0.name)/\($0.bus)" }.joined(separator: " "))
             }
             DispatchQueue.main.async { completion(hosts, current) }
         }
+    }
+
+    private func hostName(_ index: Int, length: Int) -> String {
+        var name: [UInt8] = []
+        while name.count < length {
+            guard let piece = call(0x1815, 3, [UInt8(index), UInt8(name.count)]) else { break }
+            let chunk = Array(piece[6..<20].prefix(length - name.count))
+            if chunk.isEmpty { break }
+            name += chunk
+        }
+        return String(bytes: name, encoding: .utf8) ?? ""
+    }
+
+    // 目前頻道的名稱和這台電腦不同就寫入電腦名稱（見 HostName.swift），回讀確認；每次連線最多試一次。
+    private func writeHostName(_ current: Int, stored: String) -> String? {
+        hostNameTried = true
+        let computer = HostName.computerName
+        guard let caps = call(0x1815, 0), let info = call(0x1815, 1, [UInt8(current)]),
+              HostName.needsWrite(capabilities: caps[4], stored: stored, computer: computer, maxLength: Int(info[9])) else { return nil }
+        for packet in HostName.writePackets(host: current, name: HostName.encode(computer, maxLength: Int(info[9]))) {
+            guard call(0x1815, 4, packet) != nil else {
+                log("host name write failed")
+                return nil
+            }
+        }
+        guard let after = call(0x1815, 1, [UInt8(current)]) else { return nil }
+        let now = hostName(current, length: Int(after[8]))
+        log("host name of channel \(current + 1) written: " + (HostName.same(now, String(decoding: HostName.encode(computer, maxLength: Int(info[9])), as: UTF8.self)) ? "confirmed" : "not confirmed"))
+        return now
     }
 
     // 把滑鼠切到另一個頻道。滑鼠會立刻離開這台電腦，有時來不及回覆，所以送出就算完成；
@@ -640,7 +678,16 @@ final class HIDPP {
             s.wheelMode = Int(reply[4])
             s.smartShift = Int(reply[5])
         }
+        if let caps = call(0x2111, 0), let value = call(0x2111, 1),
+           SolaarFeatures.torque(caps, value, Int(value[6])) != nil {
+            s.ratchetTorque = Int(value[6])
+        }
+        if let reply = call(0x2150, 1) {
+            s.raw.append("2150 mode=" + hex(reply, 4, 2))
+            s.thumbInverted = SolaarFeatures.maskValue(reply, byte: 1, mask: 1, width: 2)
+        }
         if let reply = call(0x2121, 1) {
+            s.hiresResolution = SolaarFeatures.maskValue(reply, byte: 0, mask: 2, width: 1)
             s.raw.append("2121 mode=" + hex(reply, 4, 1))
             s.wheelInvertPresent = true
             s.wheelInverted = reply[4] & 0x04 != 0
@@ -667,6 +714,24 @@ final class HIDPP {
         guard call(0x2111, 2, [UInt8(mode), UInt8(threshold)]) != nil,
               let check = call(0x2111, 1) else { return false }
         return Int(check[4]) == mode && Int(check[5]) == threshold
+    }
+
+    func setRatchetTorque(_ value: Int) -> Bool {
+        guard let packet = SolaarFeatures.torque(call(0x2111, 0), call(0x2111, 1), value),
+              call(0x2111, 2, packet) != nil else { return false }
+        return SolaarFeatures.matches(call(0x2111, 1), packet)
+    }
+
+    func setThumbInvert(_ value: Bool) -> Bool {
+        guard let packet = SolaarFeatures.masked(call(0x2150, 1), byte: 1, mask: 1, on: value, width: 2),
+              call(0x2150, 2, packet) != nil else { return false }
+        return SolaarFeatures.matches(call(0x2150, 1), packet)
+    }
+
+    func setHiresResolution(_ value: Bool) -> Bool {
+        guard let packet = SolaarFeatures.masked(call(0x2121, 1), byte: 0, mask: 2, on: value, width: 1),
+              call(0x2121, 2, packet) != nil else { return false }
+        return SolaarFeatures.matches(call(0x2121, 1), packet)
     }
 
     // 段落與自由滾動互換，SmartShift 門檻照讀到的值寫回。成功時回傳新的（模式, 門檻）。

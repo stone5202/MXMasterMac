@@ -75,6 +75,9 @@ struct DeviceSettings: Codable, Equatable {
     var dpi: Int?
     var wheelMode: Int?          // 1 自由、2 段落
     var smartShift: Int?         // 1–50，255 = 不自動切換
+    var ratchetTorque: Int?
+    var thumbInvert: Bool?
+    var hiresResolution: Bool?
     var wheelInvert: Bool?
     var haptic: Int?             // 0–100
 }
