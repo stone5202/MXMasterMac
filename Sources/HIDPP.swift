@@ -260,6 +260,12 @@ final class HIDPP {
         if bytes[0] == 0x10 && bytes[2] == 0x41 {
             work.asyncAfter(deadline: .now() + 0.3) { [weak self] in
                 guard let self, !self.stopped else { return }
+                // 已經透過這個接收器連著滑鼠時，別的槽位（例如同一個接收器上的鍵盤睡醒或切回來）的通知與滑鼠無關，
+                // 不要因此去確認滑鼠：滑鼠閒置時第一個請求可能等不到，會被誤判成斷線而重連。
+                if self.isBolt, let current = self.device, CFEqual(current, source), bytes[1] != self.deviceIndex {
+                    self.log("receiver connection notice for dev=" + String(format: "%02X", bytes[1]) + " (not the mouse); ignored")
+                    return
+                }
                 self.log("receiver connection notice " + self.hex(bytes, 0, 7))
                 if self.device == nil { self.tryConnect() } else { self.verifyAlive() }
             }
@@ -281,6 +287,11 @@ final class HIDPP {
         for index in candidates {
             // 睡眠中的裝置可能要一秒左右才回覆。
             guard let root = request(index, 0, 0, [0x1B, 0x04, 0], timeout: 1.8), root[4] != 0 else { continue }
+            // 同一個接收器上的鍵盤（例如 MX Mechanical）也有 1B04；明確說自己不是滑鼠的槽位要跳過，否則找不到滑鼠。
+            if bolt, let kind = deviceKind(index), ![3, 4, 5].contains(kind) {
+                log("BOLT dev=" + String(format: "%02X", index) + " has 1B04 but is not a mouse (type \(kind)); skipped")
+                continue
+            }
             deviceIndex = index
             reprogIndex = root[4]
             found = true
@@ -313,6 +324,13 @@ final class HIDPP {
     }
 
     private var transportName: String { isBolt ? "BOLT" : "BLE" }
+
+    // 0x0005 函式 2 回報的裝置類型（0 鍵盤、3 滑鼠、4 觸控板、5 軌跡球，依 Solaar）；沒回答時是 nil。
+    private func deviceKind(_ index: UInt8) -> Int? {
+        guard let root = request(index, 0, 0, [0x00, 0x05, 0], timeout: 0.9), root[4] != 0,
+              let type = request(index, root[4], 2, [], timeout: 0.9) else { return nil }
+        return Int(type[4])
+    }
 
     private func reset() {
         device = nil

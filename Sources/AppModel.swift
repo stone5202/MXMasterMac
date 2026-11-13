@@ -5,7 +5,7 @@ import UserNotifications
 
 // 全部的執行期狀態與輸入處理邏輯；只在主執行緒使用。
 final class AppModel: ObservableObject {
-    static let version = "2.3"
+    static let version = "2.3.1"
 
     @Published var config: Config { didSet { configChanged() } }
     @Published var status: DeviceStatus = .searching

@@ -4,6 +4,11 @@
   <a href="CHANGELOG.md">繁體中文</a> · <strong>English</strong>
 </p>
 
+## 2.3.1 — 2026-11-14
+
+- Fix: with the mouse and a Logitech keyboard that supports button diversion (an MX Mechanical, for one) on the same Logi Bolt receiver and the keyboard in an earlier slot, the app took the keyboard for the mouse and never connected to the mouse. The device type is now checked and slots that are not a mouse are skipped.
+- Fix: with the mouse connected through a Logi Bolt receiver, a connection notice from another device on the same receiver (a keyboard waking up or coming back from another computer) also made the app re-check the mouse, and an idle mouse could be taken as disconnected and reconnected. Only notices from the mouse's own slot are acted on now.
+
 ## 2.3 — 2026-11-13
 
 - New Keyboard page (between MX Flow and Advanced) for a Logitech keyboard connected to this Mac over Bluetooth (tested with an MX Mechanical Mini). Like the mouse it shows connection, battery and firmware; it sets the backlight (automatic, manual brightness or off) and whether the top row sends media keys or F1–F12, and lists the keyboard's Easy-Switch channels. Settings live on the keyboard and count as applied once it confirms them.
