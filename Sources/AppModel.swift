@@ -8,8 +8,8 @@ final class AppModel: ObservableObject {
     static let version = "2.5"
 
     @Published var config: Config { didSet { configChanged() } }
-    @Published var status: DeviceStatus = .searching
-    @Published var snapshot: DeviceSnapshot?
+    @Published var status: DeviceStatus = .searching { didSet { clearBatteryIfDisconnected() } }
+    @Published var snapshot: DeviceSnapshot? { didSet { clearBatteryIfDisconnected() } }
     @Published var enabled = true
     @Published var trusted = AXIsProcessTrusted()
     @Published var tapInstalled = false
@@ -332,6 +332,15 @@ final class AppModel: ObservableObject {
     }
 
     // MARK: - 裝置
+
+    // 滑鼠關機或切走時不留舊電量（其他裝置設定仍保留，頁面才不會清空）；連回來會重新讀取。
+    // snapshot 也要檢查：斷線前送出的讀取可能在斷線後才回來。
+    private func clearBatteryIfDisconnected() {
+        guard status == .searching || status == .notFound, (snapshot?.batteryPercent ?? -1) >= 0 else { return }
+        snapshot?.batteryPercent = -1
+        snapshot?.charging = false
+        snapshot?.full = false
+    }
 
     private func deviceReady() {
         buttonState.removeAll()

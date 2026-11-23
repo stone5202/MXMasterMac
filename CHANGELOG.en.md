@@ -17,6 +17,7 @@
 - Fix: remapping MX Master 4's middle, back or forward button or thumb wheel also changed the same button on mice using a Lightspeed receiver (such as G502).
 - Fix: the pointer of another mouse on a Logitech USB receiver could jump during fast movement. The app no longer opens the receiver's mouse interface.
 - Fixes: changing settings while holding a ring or gesture button, pressing two at once, or releasing right after a fast swipe no longer sticks, misfires or misses the direction; MX Master 4 and the keyboard notify correctly when fully charged, once per charge; a device on another computer no longer records a stale battery level.
+- Fix: when MX Master 4 is off or disconnected, the bottom-left corner, the menu bar and the Pointer & Wheel page no longer keep showing its last battery level.
 
 ## 2.4 — 2026-11-14
 
