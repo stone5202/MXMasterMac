@@ -122,6 +122,10 @@ struct Config: Codable {
     var lowBatteryAlert = true   // 電量降到門檻以下（沒在充電）時通知一次
     var lowBatteryLevel = 15     // 低電量門檻（%）
     var lowBatteryHapticPause = true   // 低電量時暫停所有震動
+    var otherDevicesInSidebar = true   // 左下角也列出「其他裝置」的電量（偵測到才顯示）
+    var otherDevicesAlert = true       // 「其他裝置」的低電量提醒（門檻同上）；2026-11-23 起是其他裝置沒有逐台設定時的預設
+    var deviceAlerts: [String: DeviceBatteryAlert] = [:]   // 逐台提醒（"mouse"、"keyboard"、"other-<WPID>"）；沒有的用預設
+    var otherAppActions: [String: ActionBinding] = [:]     // 其他裝置設成「交給 App」的鍵（鍵號 "6"–"16"）要執行的動作
     var language = "Auto"
     var device = DeviceSettings()
     var edgeSwitch = EdgeSwitchSettings()
@@ -223,6 +227,10 @@ struct Config: Codable {
         let level = (try? c.decode(Int.self, forKey: .lowBatteryLevel)) ?? 15
         lowBatteryLevel = Config.lowBatteryLevels.contains(level) ? level : 15
         lowBatteryHapticPause = (try? c.decode(Bool.self, forKey: .lowBatteryHapticPause)) ?? true
+        otherDevicesInSidebar = (try? c.decode(Bool.self, forKey: .otherDevicesInSidebar)) ?? true
+        otherDevicesAlert = (try? c.decode(Bool.self, forKey: .otherDevicesAlert)) ?? true
+        deviceAlerts = (try? c.decode([String: DeviceBatteryAlert].self, forKey: .deviceAlerts)) ?? [:]
+        otherAppActions = (try? c.decode([String: ActionBinding].self, forKey: .otherAppActions)) ?? [:]
         language = (try? c.decode(String.self, forKey: .language)) ?? "Auto"
         device = (try? c.decode(DeviceSettings.self, forKey: .device)) ?? DeviceSettings()
         diagnosticsToFile = (try? c.decode(Bool.self, forKey: .diagnosticsToFile)) ?? false

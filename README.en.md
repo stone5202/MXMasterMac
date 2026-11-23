@@ -8,9 +8,9 @@
   <img src="Resources/app.png" width="128" alt="MX Master Mac app icon">
 </p>
 
-MX Master Mac is a lightweight macOS utility for the Logitech MX Master 4. It lives in the menu bar and lets you customize buttons, thumb gestures and the Actions Ring, and adjust pointer speed, SmartShift, scroll direction and haptic feedback, without Logi Options+. Version 2.0 adds **MX Flow**: push the pointer against a screen edge and the mouse moves to another computer. Since 2.3 it also supports a Logitech keyboard: battery, backlight and F-keys, and the keyboard can follow the mouse to the other computer. Since 2.4 you can pair devices with a Logi Bolt receiver right in the app. It is the macOS edition of the same product as [MX Master Win](https://github.com/stone5202/MXMasterWin) for Windows (formerly MX Master Portable), with the same features and the same way of setting them up, rewritten in Swift. Run one edition on each computer and MX Flow takes the mouse back and forth between Mac and Windows.
+MX Master Mac is a lightweight macOS utility for the Logitech MX Master 4. It lives in the menu bar and lets you customize buttons, thumb gestures and the Actions Ring, and adjust pointer speed, SmartShift, scroll direction and haptic feedback, without Logi Options+. Version 2.0 adds **MX Flow**: push the pointer against a screen edge and the mouse moves to another computer. Since 2.3 it also supports a Logitech keyboard: battery, backlight and F-keys, and the keyboard can follow the mouse to the other computer. Since 2.4 you can pair devices with a Logi Bolt receiver right in the app. Since 2.5 it shows the battery and status of other Logitech devices and can configure a G502 LIGHTSPEED. It is the macOS edition of the same product as [MX Master Win](https://github.com/stone5202/MXMasterWin) for Windows (formerly MX Master Portable), with the same features and the same way of setting them up, rewritten in Swift. Run one edition on each computer and MX Flow takes the mouse back and forth between Mac and Windows.
 
-> Current version: 2.4 · Interface languages: Traditional Chinese, English (follows the system by default)
+> Current version: 2.5 · Interface languages: Traditional Chinese, English (follows the system by default)
 
 See the [changelog](CHANGELOG.en.md) or [GitHub Releases](https://github.com/stone5202/MXMasterMac/releases) for what changed in each version.
 
@@ -53,11 +53,13 @@ See the [changelog](CHANGELOG.en.md) or [GitHub Releases](https://github.com/sto
 </p>
 
 <p align="center">
+  <img src="docs/screenshots/others.en.png" width="45%" alt="Other Devices page: device tabs, G502 drawing and buttons">
+  &nbsp;
   <img src="docs/screenshots/advanced.en.png" width="45%" alt="Advanced page: battery and permissions">
 </p>
 
 <p align="center">
-  Advanced (battery)
+  Other Devices · Advanced (battery)
 </p>
 
 ## Download and use
@@ -78,13 +80,15 @@ Quit Logi Options+ first: running both makes them overwrite each other's button 
 - **Four-way thumb gestures**: hold the gesture button and swipe; all four directions and the sensitivity are customizable.
 - **Haptics**: set the mouse's haptic strength and four haptic moments separately: ring slices, gesture recognized, before a computer switch, and mode changes. Each can be switched on or off, given one of six waveforms and tried.
 - **Precision mode**: hold the chosen button to drop the pointer to a slower DPI (400 by default) for detailed work such as photo editing or alignment; release to go back. It can also be toggled from the ring or a gesture. When precision mode or ratchet / free spin changes, the new state shows briefly at the bottom of the screen.
-- **Battery** (Advanced page): one system notification when the level drops to the threshold (15% by default) while not charging, and haptics can pause automatically to save power.
+- **Battery** (Advanced page): each device can have its own low-battery threshold and full-charge notice, haptics can pause automatically when the battery is low, and a battery history chart shows the last 30 days.
 - **Device settings**: shows battery level and firmware version; adjusts pointer speed (DPI), SmartShift, ratchet torque, scroll direction, high-resolution wheel, thumb-wheel direction and haptic strength. Applied values are saved and re-applied when the mouse reconnects.
 - **MX Flow**: keep pushing the pointer against a screen edge and the mouse moves to the Easy-Switch channel you chose (another computer). Each of the four edges can target its own channel, the trigger time is adjustable, and a held keyboard key or mouse button can be required; with several displays only the outer edge of the outermost display triggers. The page also lists the computer stored on each of the three channels, with a button to switch directly; the menu bar menu has an MX Flow switch as well.
 - **Keyboard** (since 2.3): for a Logitech keyboard connected to this Mac over Bluetooth (tested with an MX Mechanical Mini), the Keyboard page shows connection, battery and firmware and sets the backlight (automatic, manual brightness or off) and whether the top row sends media keys or F1–F12; since 2.4 it can also disable the keys the keyboard allows (Caps Lock, for one), set the OS layout for the current channel, and set backlight delays for hands away, hands near and external power; the bottom-left corner shows both mouse and keyboard battery.
 - **Keyboard follows the mouse** (since 2.3): when the mouse moves to another computer (MX Flow, a Switch-to-channel action or the Switch button), the keyboard moves to the matching Easy-Switch channel. Each mouse channel can pick a keyboard channel; Automatic uses the channel with the same computer name, otherwise the same number.
 - **Logi Bolt receiver** (since 2.4): on the Receiver page, pair a new mouse or keyboard (passkey typed on the keyboard or clicked on the mouse), list paired devices and unpair them, without Logi Bolt or Options+.
 - **Channel names** (since 2.4): when the current channel of the mouse or keyboard stores a different name from this computer ("Logitech Bolt receiver", for one), this computer's name is written, so MX Flow and the keyboard's automatic matching are more accurate.
+- **Other Devices** (since 2.5): lists Logitech devices on Lightspeed, Unifying and Nano receivers (tested with G502 LIGHTSPEED and M331) with connection, battery, pointer speed, report rate and firmware, a tab for each device and a drawing of its series.
+- **G502 LIGHTSPEED** (since 2.5): switch DPI levels and onboard profiles, and edit DPI levels, report rate, lighting and buttons. Settings live in the mouse, are backed up before each write, read back and can be restored; buttons can also be handed to the app to run any action, gesture or the ring.
 - **Recovers after a connection change**: when the mouse goes to another computer and comes back, or switches between Bluetooth and Logi Bolt, the special buttons are re-enabled automatically.
 - **Other**: settings save automatically, single instance, can be paused, optional launch at login, Chinese / English interface.
 - **Engineering mode**: view the events the mouse sends, for reporting problems.
@@ -94,7 +98,8 @@ Quit Logi Options+ first: running both makes them overwrite each other's button 
 - macOS 14 or later on Apple silicon (developed and tested on macOS 27)
 - Logitech MX Master 4 (Bluetooth or the Logi Bolt receiver)
 - Keyboard features (optional): a Logitech HID++ 2.0 keyboard connected over Bluetooth
-- Receiver page (optional): a Logi Bolt receiver (Unifying is not supported)
+- Receiver page (optional): a Logi Bolt receiver (pairing doesn't support Unifying)
+- Other Devices page (optional): a Logitech device on a Lightspeed, Unifying or Nano receiver
 
 ## Permissions
 
@@ -107,13 +112,14 @@ Quit Logi Options+ first: running both makes them overwrite each other's button 
 - Developed and tested only on the MX Master 4 (firmware `RBM 27.03`); other models are untested.
 - The release build is neither notarized nor signed with a developer certificate; after updating you may need to grant the two permissions again.
 - When running alongside Logi Options+, the two overwrite each other's diversion and device settings. Use only one.
-- Side-button and thumb-wheel mappings apply to every mouse (system events do not identify the source device).
+- Side-button and thumb-wheel mappings also apply to other ordinary mice; mice on a Lightspeed receiver (such as G502) are excluded and set up on the Other Devices page.
+- The Other Devices page is tested only with G502 LIGHTSPEED and M331; Unifying receivers are untested. Editing is available only for G502 LIGHTSPEED, and other models show information only.
 - Mission Control, App Exposé, Show Desktop and desktop switching send the default system shortcuts; they do nothing if those shortcuts were changed or disabled in System Settings → Keyboard → Keyboard Shortcuts.
 - MX Flow transfers no clipboard or files. To come back the same way, the other computer must also run a version with MX Flow and have an edge set; for the keyboard to come back too, that version must also have "keyboard follows"; otherwise press the Easy‑Switch buttons on the mouse and keyboard.
 - Keyboard features are tested only with an MX Mechanical Mini and support only keyboards connected over Bluetooth (the Keyboard page does not support a keyboard on a Logi Bolt receiver yet, though the Receiver page can pair or unpair it). Channels paired through Bolt are often stored as "Logitech Bolt receiver" on the keyboard, so Automatic uses the same channel number; choose them by hand on the MX Flow page if needed.
 - When the mouse reconnects, the app cannot tell which computer it came from; with more than one edge set, the pointer is not moved to an edge.
 - Per-application profiles and firmware updates from Options+ are not included.
-- Button positions in the diagram are indicative and have not been checked against the hardware one by one.
+- Button positions in the drawings are indicative and have not been checked against the hardware one by one; series drawings other than G502 aren't linked to the button list.
 
 ## How it works
 
@@ -123,14 +129,15 @@ Quit Logi Options+ first: running both makes them overwrite each other's button 
 - MX Flow: `NSEvent` monitors watch pointer movement to tell when the pointer is held against the outer edge of the outermost display; the switch is sent with HID++ feature `0x1814` (Change Host), and `0x1815` reads the host name stored on each channel and writes this computer's name to the current channel when it differs.
 - Keyboard: a second `IOHIDManager` reads only HID++ reports (never typing), uses `0x0005` to tell a keyboard from a mouse, and `0x1004` (battery), `0x0003` (firmware), `0x1982` (backlight and delays), `0x40A3` (F-keys), `0x4521` (disabled keys) and `0x4531` (OS layout); channel switching also uses `0x1814`.
 - Receiver: another `IOHIDManager` talks only to the Logi Bolt receiver itself and uses its registers to discover, pair and unpair (`0xC0`, `0x2C1`, `0x2B5`); wireless notifications are turned on during pairing and restored afterwards.
+- Other devices: another `IOHIDManager` opens only the receiver interface that carries HID++ (never its mouse interface) and uses `0x1000`/`0x1001`/`0x1004` for battery, `0x2201` for DPI, `0x8100` to read and write onboard profiles and `0x8060` for report rate; reads happen only while the pointer is still.
 - Reconnect detection: `0x1D4B` notifications, device arrival / removal, and system wake; while disconnected it retries every 3 seconds.
 
-HID++ feature ids and packet layouts follow the public implementations in [Solaar](https://github.com/pwr-Solaar/Solaar) and [logiops](https://github.com/PixlOne/logiops).
+HID++ feature ids and packet layouts follow the public implementations in [Solaar](https://github.com/pwr-Solaar/Solaar) and [logiops](https://github.com/PixlOne/logiops). The device model table comes from [libratbag](https://github.com/libratbag/libratbag) (MIT; see [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)).
 
 ## Privacy
 
 - The app makes no network connections and contains no analytics, ads or tracking.
-- Settings are stored in `~/Library/Application Support/MXMasterMac/config.json`.
+- Settings are stored in `~/Library/Application Support/MXMasterMac/config.json`; battery history (`battery-history.json`) and mouse profile backups (`profile-backups/`) are in the same folder and stay on this Mac.
 - Mouse events are written to `events.log` in the same folder only while "Write to log file" is on in engineering mode; the log holds button and HID packets, not keyboard input.
 - No driver or system extension is installed.
 

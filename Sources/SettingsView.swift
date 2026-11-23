@@ -5,7 +5,7 @@ import UserNotifications
 // MARK: - 共用外觀
 
 enum Page: Int, CaseIterable {
-    case buttons, ring, device, haptics, switching, keyboard, receiver, advanced
+    case buttons, ring, device, haptics, switching, keyboard, receiver, others, advanced
 
     var title: String {
         switch self {
@@ -16,6 +16,7 @@ enum Page: Int, CaseIterable {
         case .switching: return "MX Flow"
         case .keyboard: return Lang.t("鍵盤", "Keyboard")
         case .receiver: return Lang.t("接收器", "Receiver")
+        case .others: return Lang.t("其他裝置", "Other Devices")
         case .advanced: return Lang.t("進階", "Advanced")
         }
     }
@@ -29,6 +30,7 @@ enum Page: Int, CaseIterable {
         case .switching: return Lang.t("把游標推到螢幕邊緣，滑鼠就切到另一台電腦", "Push the pointer against a screen edge to move the mouse to another computer")
         case .keyboard: return Lang.t("Logitech 鍵盤的電量、背光與 F 鍵，以及跟著滑鼠切換電腦", "Battery, backlight and F-keys of a Logitech keyboard, and switching computers with the mouse")
         case .receiver: return Lang.t("在 Logi Bolt 接收器上配對新的滑鼠或鍵盤，或解除配對", "Pair a mouse or keyboard with a Logi Bolt receiver, or unpair one")
+        case .others: return Lang.t("其他羅技滑鼠與裝置的電量與連線狀態", "Battery and connection of your other Logitech mice and devices")
         case .advanced: return Lang.t("啟動方式、電池提醒、權限與工程模式", "Start-up, battery alerts, permissions and engineering mode")
         }
     }
@@ -42,6 +44,7 @@ enum Page: Int, CaseIterable {
         case .switching: return "rectangle.on.rectangle"
         case .keyboard: return "keyboard"
         case .receiver: return "antenna.radiowaves.left.and.right"
+        case .others: return "square.grid.2x2"
         case .advanced: return "gearshape"
         }
     }
@@ -144,7 +147,8 @@ struct SettingsView: View {
 
     var body: some View {
         HStack(spacing: 0) {
-            sidebar.frame(width: 232).background(SidebarBackground())
+            // 左下角電量列變多時，側邊欄和背景仍要填滿整個視窗高度。
+            sidebar.frame(width: 232).frame(maxHeight: .infinity, alignment: .top).background(SidebarBackground())
             Divider()
             content
         }
@@ -184,13 +188,20 @@ struct SettingsView: View {
             .padding(.horizontal, 12)
 
             Spacer()
-            deviceChip.padding(12)
+            deviceChip.padding(.horizontal, 12).padding(.vertical, compactChip ? 8 : 12)
         }
+    }
+
+    // 左下角有三列以上時排緊一點，側邊欄才放得進視窗高度。
+    private var compactChip: Bool {
+        let used = ((model.snapshot?.batteryPercent ?? -1) >= 0 ? 1 : 0) + ((model.keyboardSnapshot?.batteryPercent ?? -1) >= 0 ? 1 : 0)
+        let others = model.config.otherDevicesInSidebar ? model.otherDevices.filter { $0.link == .online && $0.batteryPercent >= 0 }.count : 0
+        return used + others >= 3
     }
 
     // 左下角：連線狀態、電量、啟用開關。
     private var deviceChip: some View {
-        VStack(alignment: .leading, spacing: 10) {
+        VStack(alignment: .leading, spacing: compactChip ? 5 : 10) {
             HStack(spacing: 8) {
                 Circle().fill(statusColor).frame(width: 8, height: 8)
                 Text(shortStatus).font(.system(size: 12, weight: .medium))
@@ -205,6 +216,37 @@ struct SettingsView: View {
                 batteryRow(device: "keyboard", percent: kb.batteryPercent, charging: kb.charging,
                            detail: kb.transport == "BOLT" ? "Logi Bolt" : "Bluetooth")
             }
+            // 其他裝置（例如 G502）連著時再多一列；電壓換算的百分比前面加「約」。
+            if model.config.otherDevicesInSidebar {
+                // 左下角連 MX Master 4、鍵盤最多三列，再多會把視窗撐高；放不下的收成一列。
+                let listed = model.otherDevices.filter { $0.link == .online && $0.batteryPercent >= 0 }
+                let used = ((model.snapshot?.batteryPercent ?? -1) >= 0 ? 1 : 0) + ((model.keyboardSnapshot?.batteryPercent ?? -1) >= 0 ? 1 : 0)
+                let room = max(1, 3 - used)
+                let shown = listed.count <= room ? listed.count : room - 1
+                ForEach(listed.prefix(shown)) { other in
+                    // 點一下直接跳到這台裝置。
+                    Button {
+                        model.selectedOtherID = other.id
+                        page = .others
+                    } label: {
+                        batteryRow(device: other.isPointing ? "computermouse" : "dot.radiowaves.left.and.right",
+                                   percent: other.batteryPercent, charging: other.charging,
+                                   detail: OthersPage.shortName(other), estimated: other.batterySource == .voltage)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help(Lang.t("打開這台裝置", "Open this device"))
+                }
+                if listed.count > shown {
+                    Button { page = .others } label: {
+                        Text(shown > 0 ? Lang.t("還有 \(listed.count - shown) 台裝置…", "\(listed.count - shown) more…")
+                                       : Lang.t("其他裝置 \(listed.count) 台…", "\(listed.count) other devices…"))
+                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                            .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            }
             Divider()
             Toggle(isOn: Binding(get: { model.enabled }, set: { model.setEnabled($0) })) {
                 Text(model.enabled ? Lang.t("按鍵對應已啟用", "Mapping enabled") : Lang.t("已暫停", "Paused"))
@@ -212,18 +254,18 @@ struct SettingsView: View {
             }
             .toggleStyle(.switch).controlSize(.small)
         }
-        .padding(12)
+        .padding(.horizontal, 12).padding(.vertical, compactChip ? 10 : 12)
         .background(RoundedRectangle(cornerRadius: 12, style: .continuous).fill(Color.primary.opacity(0.05)))
     }
 
     // 左下角的一列電量：裝置圖示、電池、百分比、連線方式。
-    private func batteryRow(device: String, percent: Int, charging: Bool, detail: String) -> some View {
+    private func batteryRow(device: String, percent: Int, charging: Bool, detail: String, estimated: Bool = false) -> some View {
         HStack(spacing: 8) {
             Image(systemName: device).font(.system(size: 12)).foregroundStyle(.secondary).frame(width: 18)
             Image(systemName: batterySymbol(percent: percent, charging: charging)).font(.system(size: 15))
                 .foregroundStyle(percent <= 15 && !charging ? Color.red : Color.green)
-            Text("\(percent)%").font(.system(size: 13, weight: .semibold)).monospacedDigit()
-            Text(detail).font(.system(size: 11.5)).foregroundStyle(.secondary)
+            Text((estimated ? "~" : "") + "\(percent)%").font(.system(size: 13, weight: .semibold)).monospacedDigit()
+            Text(detail).font(.system(size: 11.5)).foregroundStyle(.secondary).lineLimit(1)
             Spacer()
         }
     }
@@ -275,6 +317,7 @@ struct SettingsView: View {
                     case .switching: SwitchPage(model: model, page: $page)
                     case .keyboard: KeyboardPage(model: model, page: $page)
                     case .receiver: ReceiverPage(model: model)
+                    case .others: OthersPage(model: model)
                     case .advanced: AdvancedPage(model: model)
                     }
                 }
@@ -315,13 +358,14 @@ struct SettingsView: View {
 
 struct ActionPicker: View {
     @Binding var value: ActionBinding
+    var allowsGestureHold = false      // 只有實體按鍵的選單才列「手勢鍵」
     @State private var recording = false
     @State private var editingTarget = false
     @State private var target = ""
 
     var body: some View {
         HStack(spacing: 6) {
-            ActionPopUp(value: value, onChoose: choose).frame(maxWidth: .infinity).frame(height: 24)
+            ActionPopUp(value: value, allowsGestureHold: allowsGestureHold, onChoose: choose).frame(maxWidth: .infinity).frame(height: 24)
             if value.action == .customShortcut {
                 Button(Lang.t("錄製", "Record")) { recording = true }
             } else if value.action == .launch {
@@ -356,6 +400,7 @@ struct ActionPicker: View {
 // 系統原生的彈出式選單：寬度可以撐滿整列，選項帶圖示並依類別分段。
 struct ActionPopUp: NSViewRepresentable {
     let value: ActionBinding
+    let allowsGestureHold: Bool
     let onChoose: (MappedAction) -> Void
 
     final class Coordinator: NSObject {
@@ -393,7 +438,7 @@ struct ActionPopUp: NSViewRepresentable {
         for (index, group) in ActionCatalog.groups.enumerated() {
             if index > 0 { menu.addItem(.separator()) }
             menu.addItem(NSMenuItem.sectionHeader(title: group.title))
-            for action in group.actions {
+            for action in group.actions where action != .gestureHold || allowsGestureHold {
                 let item = NSMenuItem(title: ActionCatalog.title(action), action: nil, keyEquivalent: "")
                 item.representedObject = action.rawValue
                 item.image = NSImage(systemSymbolName: ActionCatalog.symbol(action), accessibilityDescription: nil)
@@ -526,7 +571,8 @@ struct ButtonsPage: View {
                                 Text(input.hint).font(.system(size: 11)).foregroundStyle(.secondary)
                             }
                             .frame(width: 138, alignment: .leading)
-                            ActionPicker(value: Binding(get: { model.mapping(input) }, set: { model.setMapping(input, $0) }))
+                            ActionPicker(value: Binding(get: { model.mapping(input) }, set: { model.setMapping(input, $0) }),
+                                         allowsGestureHold: input.canHoldGesture)
                         }
                         .padding(.vertical, 9).padding(.horizontal, 8)
                         .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
@@ -540,8 +586,8 @@ struct ButtonsPage: View {
                 }
             }
         }
-        Text(Lang.t("側鍵與拇指滾輪的對應會套用到所有滑鼠（系統分不出事件來自哪一隻）。示意圖上的位置僅供參考。",
-                    "Side-button and thumb-wheel mappings apply to every mouse (the system cannot tell them apart). Positions in the picture are indicative."))
+        Text(Lang.t("中鍵、側鍵與拇指滾輪的對應也會套用到其他一般滑鼠；Lightspeed 接收器上的滑鼠（例如 G502）不套用，在「其他裝置」頁設定。示意圖上的位置僅供參考。",
+                    "Middle, side-button and thumb-wheel mappings also apply to other ordinary mice; mice on a Lightspeed receiver (such as G502) are excluded and set up on the Other Devices page. Positions in the picture are indicative."))
             .font(.system(size: 11.5)).foregroundStyle(.secondary).padding(.horizontal, 4)
     }
 }
@@ -665,9 +711,9 @@ struct RingPage: View {
             }
         }
 
-        Card(title: Lang.t("拇指四向手勢", "Thumb gestures"), subtitle: Lang.t("按住拇指手勢鍵並往一個方向滑動", "Hold the gesture button and swipe in a direction")) {
+        Card(title: Lang.t("拇指四向手勢", "Thumb gestures"), subtitle: Lang.t("按住拇指手勢鍵，或設成「手勢鍵」的按鍵，往一個方向滑動", "Hold the gesture button, or any button set to Gesture button, and swipe in a direction")) {
             SettingRow(title: Lang.t("啟用四向手勢", "Enable four-way gestures"),
-                       subtitle: Lang.t("關閉時，按一下手勢鍵會執行「按鈕」頁設定的動作", "When off, a click runs the action chosen on the Buttons page")) {
+                       subtitle: Lang.t("只影響拇指手勢鍵；關閉時按一下會執行「按鈕」頁設定的動作", "Only affects the thumb gesture button; when off, a click runs the action chosen on the Buttons page")) {
                 Toggle("", isOn: $model.config.gestureMode).toggleStyle(.switch).labelsHidden()
             }
             Divider()
@@ -686,8 +732,8 @@ struct RingPage: View {
                     }
                 }
             }
-            .disabled(!model.config.gestureMode)
-            .opacity(model.config.gestureMode ? 1 : 0.45)
+            .disabled(!(model.config.gestureMode || model.gestureHoldInUse))
+            .opacity(model.config.gestureMode || model.gestureHoldInUse ? 1 : 0.45)
             Divider()
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 14) {
@@ -704,8 +750,8 @@ struct RingPage: View {
                             "Higher means a shorter swipe picks a direction; currently about \(Int((65 * model.config.gestureDistanceFactor).rounded())) pt. 50% is the original distance"))
                     .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
-            .disabled(!model.config.gestureMode)
-            .opacity(model.config.gestureMode ? 1 : 0.45)
+            .disabled(!(model.config.gestureMode || model.gestureHoldInUse))
+            .opacity(model.config.gestureMode || model.gestureHoldInUse ? 1 : 0.45)
         }
     }
 }
@@ -994,8 +1040,8 @@ struct HapticsPage: View {
                 }
                 Divider()
                 SettingRow(title: Lang.t("電量低時暫停震動", "Pause haptics on low battery"),
-                           subtitle: Lang.t("電量在 \(model.config.lowBatteryLevel)% 以下且沒有充電時，下方的震動都不播放（門檻在「進階」頁的「電池」）",
-                                            "Below \(model.config.lowBatteryLevel)% and not charging, none of the taps below play (threshold under Battery on the Advanced page)")) {
+                           subtitle: Lang.t("電量在 \(model.mouseLowLevel)% 以下且沒有充電時，下方的震動都不播放（門檻在「進階」頁的「電池」）",
+                                            "Below \(model.mouseLowLevel)% and not charging, none of the taps below play (threshold under Battery on the Advanced page)")) {
                     Toggle("", isOn: $model.config.lowBatteryHapticPause).toggleStyle(.switch).labelsHidden()
                 }
             }
@@ -1488,6 +1534,46 @@ struct PermissionRow: View {
 struct AdvancedPage: View {
     @ObservedObject var model: AppModel
 
+    // 逐台提醒的清單：MX Master 4、鍵盤（連著或設定過）、「其他裝置」（同一台只列一次）。
+    private var alertDevices: [(key: String, name: String, style: DeviceGlyphStyle)] {
+        var list: [(key: String, name: String, style: DeviceGlyphStyle)] = [(BatteryDeviceKey.mouse, "MX Master 4", .ergonomic)]
+        if let kb = model.keyboardSnapshot {
+            list.append((BatteryDeviceKey.keyboard, kb.name.isEmpty ? Lang.t("鍵盤", "Keyboard") : kb.name, .keyboard))
+        } else if model.config.deviceAlerts[BatteryDeviceKey.keyboard] != nil {
+            list.append((BatteryDeviceKey.keyboard, Lang.t("鍵盤", "Keyboard"), .keyboard))
+        }
+        var seen = Set<String>()
+        for d in model.otherDevices where !d.wpid.isEmpty && seen.insert(d.wpid).inserted {
+            list.append((BatteryDeviceKey.other(wpid: d.wpid), OthersPage.shortName(d), DeviceGlyphStyle.of(d)))
+        }
+        return list
+    }
+
+    private func alertRow(_ key: String, name: String, style: DeviceGlyphStyle) -> some View {
+        let current = model.config.deviceAlerts[key]
+            ?? DeviceBatteryAlert(low: key.hasPrefix("other-") ? model.config.otherDevicesAlert : true)
+        func set(_ change: (inout DeviceBatteryAlert) -> Void) {
+            var a = current
+            change(&a)
+            model.setBatteryAlert(key, a)
+        }
+        return HStack(spacing: 10) {
+            DeviceGlyph(style: style, size: 18).foregroundStyle(Color.accentColor).frame(width: 22)
+            Text(name).font(.system(size: 12.5)).lineLimit(1)
+            Spacer(minLength: 8)
+            Picker("", selection: Binding(get: { current.threshold }, set: { v in set { $0.threshold = v } })) {
+                Text(Lang.t("預設（\(model.config.lowBatteryLevel)%）", "Default (\(model.config.lowBatteryLevel)%)")).tag(0)
+                ForEach(Config.lowBatteryLevels, id: \.self) { Text(verbatim: "\($0)%").tag($0) }
+            }
+            .labelsHidden().frame(width: 110)
+            Toggle(Lang.t("低電量", "Low"), isOn: Binding(get: { current.low }, set: { v in set { $0.low = v } }))
+                .toggleStyle(.checkbox)
+            Toggle(Lang.t("充飽", "Full"), isOn: Binding(get: { current.full }, set: { v in set { $0.full = v } }))
+                .toggleStyle(.checkbox)
+        }
+        .font(.system(size: 12))
+    }
+
     var body: some View {
         Card(title: Lang.t("一般", "General")) {
             SettingRow(title: Lang.t("啟用按鍵對應", "Enable button mapping"),
@@ -1519,15 +1605,32 @@ struct AdvancedPage: View {
                     .onChange(of: model.config.lowBatteryAlert) { model.batterySettingsChanged() }
             }
             Divider()
-            SettingRow(title: Lang.t("電量低的門檻", "Low-battery threshold"),
-                       subtitle: Lang.t("也用於「觸覺回饋」頁的低電量暫停震動", "Also used by the low-battery haptics pause on the Haptics page")) {
+            SettingRow(title: Lang.t("預設的電量低門檻", "Default low-battery threshold"),
+                       subtitle: Lang.t("下方各裝置選「預設」時用這個；MX Master 4 的門檻也用於「觸覺回饋」頁的低電量暫停震動", "Used by devices set to Default below; MX Master 4's threshold also drives the low-battery haptics pause")) {
                 Picker("", selection: $model.config.lowBatteryLevel) {
                     ForEach(Config.lowBatteryLevels, id: \.self) { Text(verbatim: "\($0)%").tag($0) }
                 }
                 .labelsHidden().frame(width: 120)
                 .onChange(of: model.config.lowBatteryLevel) { model.batterySettingsChanged() }
             }
+            Divider()
+            VStack(alignment: .leading, spacing: 6) {
+                Text(Lang.t("各裝置", "Per device")).font(.system(size: 13))
+                Text(Lang.t("每台可以有自己的門檻，也可以在充飽時通知一次；只有電壓的裝置（例如 G502）是換算值，連續兩次在門檻以下才提醒",
+                            "Each device can have its own threshold and a one-time full-charge notice; voltage-only devices (such as G502) are estimated, so they alert after two readings below it"))
+                    .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                ForEach(alertDevices, id: \.key) { item in alertRow(item.key, name: item.name, style: item.style) }
+            }
+            .disabled(!model.config.lowBatteryAlert)
+            Divider()
+            SettingRow(title: Lang.t("在左下角顯示其他裝置的電量", "Show other devices' battery in the sidebar"),
+                       subtitle: Lang.t("偵測到「其他裝置」頁的裝置時，左下角多一列電量",
+                                        "Adds a battery line at the bottom left when a device on the Other Devices page is connected")) {
+                Toggle("", isOn: $model.config.otherDevicesInSidebar).toggleStyle(.switch).labelsHidden()
+            }
         }
+
+        BatteryHistoryCard(store: model.history)
 
         Card(title: Lang.t("權限", "Permissions"), subtitle: Lang.t("輸入監控與輔助使用在「系統設定 → 隱私權與安全性」，通知在「系統設定 → 通知」",
                                                                    "In System Settings: the first two under Privacy & Security, notifications under Notifications")) {
@@ -1656,8 +1759,8 @@ struct ReceiverPage: View {
                 Card(title: Lang.t("沒有偵測到 Logi Bolt 接收器", "No Logi Bolt receiver found"),
                      subtitle: Lang.t("把接收器插到這台 Mac，這一頁就能配對新裝置或解除配對",
                                       "Plug the receiver into this Mac to pair or unpair devices here")) {
-                    Text(Lang.t("只支援 Logi Bolt 接收器；Unifying 與 Lightspeed 接收器不支援。",
-                                "Only Logi Bolt receivers are supported, not Unifying or Lightspeed."))
+                    Text(Lang.t("這裡的配對只支援 Logi Bolt；其他接收器的裝置請看「其他裝置」頁。",
+                                "Pairing here is Logi Bolt only; devices on other receivers are on the Other Devices page."))
                         .font(.system(size: 12)).foregroundStyle(.secondary)
                 }
             }
@@ -1799,5 +1902,811 @@ struct ReceiverPage: View {
                     .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
         }
+    }
+}
+
+// MARK: - 其他裝置
+
+// Lightspeed、Unifying、Nano 接收器上的其他羅技裝置（例如 G502 LIGHTSPEED、M331）。
+// 一台時整頁是它；多台時上方一排分頁，下面只顯示選到的那台。
+struct OthersPage: View {
+    @ObservedObject var model: AppModel
+    @State private var editingStages: String?     // 正在編輯各段 DPI 的裝置
+    @State private var editingLights: String?     // 正在編輯燈光的裝置
+
+    // 左下角與分頁用的短名稱。
+    static func shortName(_ device: OtherDeviceSnapshot) -> String {
+        let short = OtherDevicesProtocol.shortName(device.name)
+        return short.isEmpty ? Lang.t("其他裝置", "Other") : short
+    }
+
+    static func batteryText(_ d: OtherDeviceSnapshot) -> String {
+        let volts = d.millivolts > 0 ? String(format: "%.2f V", Double(d.millivolts) / 1000) : ""
+        if d.full { return Lang.t("已充飽", "Fully charged") }
+        if d.chargeState == .error { return Lang.t("充電錯誤", "Charging error") }
+        if d.batteryPercent < 0 { return "—" }
+        if d.charging {
+            let what = d.fastCharge ? Lang.t("快充中", "Fast charging") : d.slowCharge ? Lang.t("慢充中", "Slow charging")
+                                                                       : Lang.t("充電中", "Charging")
+            return d.batterySource == .voltage ? "\(what)（\(volts)）"
+                                               : Lang.t("\(d.batteryPercent)%（\(what)）", "\(d.batteryPercent)% (\(what.lowercased()))")
+        }
+        if d.chargeState == .pluggedNotCharging {
+            let plugged = Lang.t("已接電、未充電", "plugged in, not charging")
+            return d.batterySource == .voltage ? Lang.t("約 \(d.batteryPercent)%（\(plugged)）", "About \(d.batteryPercent)% (\(plugged))")
+                                               : Lang.t("\(d.batteryPercent)%（\(plugged)）", "\(d.batteryPercent)% (\(plugged))")
+        }
+        return d.batterySource == .voltage ? Lang.t("約 \(d.batteryPercent)%（\(volts)）", "About \(d.batteryPercent)% (\(volts))")
+                                           : "\(d.batteryPercent)%"
+    }
+
+    private func batterySymbol(_ d: OtherDeviceSnapshot) -> String {
+        if d.chargeState == .error { return "exclamationmark.triangle" }
+        if d.charging || d.full || d.chargeState == .pluggedNotCharging { return "battery.100percent.bolt" }
+        switch d.batteryPercent {
+        case 88...: return "battery.100percent"
+        case 63...: return "battery.75percent"
+        case 38...: return "battery.50percent"
+        case 13...: return "battery.25percent"
+        default: return "battery.0percent"
+        }
+    }
+
+    static func linkText(_ d: OtherDeviceSnapshot) -> String {
+        switch d.link {
+        case .online: return Lang.t("已連線", "Connected")
+        case .reading: return Lang.t("讀取中…", "Reading…")
+        case .noAnswer: return Lang.t("沒有回應", "Not responding")
+        case .receiverGone: return Lang.t("接收器未連接", "Receiver unplugged")
+        }
+    }
+
+    // 還沒連上時卡片上的說明。
+    static func offlineText(_ d: OtherDeviceSnapshot) -> String {
+        switch d.link {
+        case .receiverGone:
+            return Lang.t("接收器已拔掉。插回這台 Mac 後會自動重新讀取。",
+                          "The receiver was unplugged. Plug it back into this Mac and the device is read again automatically.")
+        case .reading:
+            return Lang.t("正在讀取裝置資料，滑鼠停一下就會完成。", "Reading the device; this finishes as soon as the pointer pauses.")
+        default:
+            return Lang.t("裝置配對在接收器上但沒有回應，可能在睡眠中或已關機。動一下或打開電源，幾秒內會自動更新。",
+                          "The device is paired with the receiver but not responding; it may be asleep or off. Move it or turn it on; this updates within a few seconds.")
+        }
+    }
+
+    // 「· 2 分鐘前更新」；一分鐘內寫「剛剛」。
+    static func seenText(_ d: OtherDeviceSnapshot, now: Date) -> String {
+        guard let seen = d.lastSeen else { return "" }
+        let minutes = Int(now.timeIntervalSince(seen) / 60)
+        if minutes < 1 { return Lang.t(" · 剛剛更新", " · updated just now") }
+        if minutes < 60 { return Lang.t(" · \(minutes) 分鐘前更新", " · updated \(minutes) min ago") }
+        let hours = minutes / 60
+        if hours < 24 { return Lang.t(" · \(hours) 小時前更新", " · updated \(hours) h ago") }
+        let f = DateFormatter()
+        f.dateFormat = "M/d HH:mm"
+        return Lang.t(" · \(f.string(from: seen)) 更新", " · updated \(f.string(from: seen))")
+    }
+
+    private func chip(_ symbol: String, _ text: String, help: String) -> some View {
+        HStack(spacing: 5) {
+            Image(systemName: symbol).font(.system(size: 11.5)).foregroundStyle(Color.accentColor)
+            Text(text).font(.system(size: 12, weight: .medium)).lineLimit(1)
+        }
+        .padding(.horizontal, 9).padding(.vertical, 4)
+        .background(Capsule().fill(Color.primary.opacity(0.05)))
+        .help(help)
+    }
+
+    private func detailLine(_ d: OtherDeviceSnapshot) -> String {
+        var parts: [String] = []
+        if d.dpiMax > 0 { parts.append(Lang.t("範圍 \(d.dpiMin)–\(d.dpiMax) DPI", "Range \(d.dpiMin)–\(d.dpiMax) DPI")) }
+        if d.onboardMode > 0 { parts.append(modeText(d)) }
+        if !d.firmware.isEmpty { parts.append(Lang.t("韌體 ", "Firmware ") + d.firmware) }
+        return parts.joined(separator: " · ")
+    }
+
+    private func modeText(_ d: OtherDeviceSnapshot) -> String {
+        switch d.onboardMode {
+        case 1: return d.profileCount > 0 ? Lang.t("內建設定檔（共 \(d.profileCount) 組）", "Onboard profiles (\(d.profileCount))")
+                                         : Lang.t("內建設定檔", "Onboard profiles")
+        case 2: return Lang.t("主機控制", "Host mode")
+        default: return "—"
+        }
+    }
+
+    var body: some View {
+        Group {
+            if model.otherDevices.isEmpty {
+                Card(title: Lang.t("沒有偵測到其他羅技裝置", "No other Logitech devices found"),
+                     subtitle: Lang.t("把羅技接收器插到這台 Mac 並打開裝置，這一頁就會列出它的電量與狀態",
+                                      "Plug a Logitech receiver into this Mac and turn the device on to see its battery and status here")) {
+                    Text(Lang.t("目前支援 Lightspeed、Unifying 與 Nano 接收器上的羅技裝置（例如 G502 LIGHTSPEED、M331）。MX Master 4 與鍵盤在各自的頁面，Logi Bolt 接收器的配對在「接收器」頁。",
+                                "Supports devices on Lightspeed, Unifying and Nano receivers (for example G502 LIGHTSPEED or M331). MX Master 4 and the keyboard have their own pages; Logi Bolt pairing is on the Receiver page."))
+                        .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                }
+            } else if model.otherDevices.count > 1 {
+                HStack(spacing: 10) {
+                    OtherDeviceTabs(model: model)
+                    Button(Lang.t("重新整理", "Refresh")) { model.refreshOthers(full: true) }.controlSize(.small)
+                }
+            }
+            if let selected = model.selectedOther { deviceCard(selected).id(selected.id) }
+            // 多台時重新整理移到分頁旁，這一列讓給卡片。
+            if model.otherDevices.count <= 1 {
+                HStack(alignment: .top, spacing: 12) {
+                    Text(Lang.t("只回報電壓的裝置（例如 G502），電量是依電壓表換算的估計值。",
+                                "For devices that report only a voltage (such as G502), the battery level is an estimate."))
+                        .font(.system(size: 11.5)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 8)
+                    Button(Lang.t("重新整理", "Refresh")) { model.refreshOthers(full: true) }.controlSize(.small)
+                }
+                .padding(.horizontal, 4)
+            }
+        }
+        .onAppear { model.refreshOthers() }
+    }
+
+    private func subtitle(_ d: OtherDeviceSnapshot) -> String {
+        let kind = OtherDevicesProtocol.receiverKind(d.receiverPID)
+        return Lang.t("\(kind) 接收器（\(d.receiverPID)）· 槽位 \(d.slot)", "\(kind) receiver (\(d.receiverPID)) · slot \(d.slot)")
+    }
+
+    private func deviceCard(_ d: OtherDeviceSnapshot) -> some View {
+        Card {
+            HStack(spacing: 12) {
+                DeviceGlyph(style: DeviceGlyphStyle.of(d), size: 22).foregroundStyle(Color.accentColor)
+                    .frame(width: 36, height: 36)
+                    .background(RoundedRectangle(cornerRadius: 9, style: .continuous).fill(Color.accentColor.opacity(0.12)))
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(d.name.isEmpty ? Lang.t("羅技裝置", "Logitech device") : d.name).font(.system(size: 15, weight: .semibold))
+                    // 每 30 秒重畫一次「幾分鐘前更新」。
+                    TimelineView(.periodic(from: .now, by: 30)) { context in
+                        Text(subtitle(d) + OthersPage.seenText(d, now: context.date))
+                            .font(.system(size: 11.5)).foregroundStyle(.secondary)
+                    }
+                }
+                Spacer(minLength: 8)
+                HStack(spacing: 6) {
+                    Circle().fill(d.link == .online ? Color.green : d.link == .receiverGone ? Color.orange
+                                  : d.link == .reading ? Color.accentColor : Color.gray)
+                        .frame(width: 8, height: 8)
+                    Text(OthersPage.linkText(d)).font(.system(size: 12, weight: .medium))
+                }
+            }
+            if d.link == .online {
+                if let sector = d.repairSector {
+                    HStack(spacing: 8) {
+                        Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(.orange)
+                        Text(Lang.t("設定檔 \(d.profiles.firstIndex(of: sector).map { $0 + 1 } ?? sector) 上次寫入沒有完成，內容可能不完整",
+                                    "Profile \(d.profiles.firstIndex(of: sector).map { $0 + 1 } ?? sector) didn't finish saving and may be incomplete"))
+                            .font(.system(size: 12)).fixedSize(horizontal: false, vertical: true)
+                        Spacer(minLength: 8)
+                        Button(Lang.t("修復設定檔", "Repair profile")) { model.repairOtherProfile(d.id) }
+                            .controlSize(.small).disabled(model.otherButtonBusy.contains(d.id))
+                    }
+                }
+                // 一排小標籤：電量、目前的指標速度、回報率。
+                HStack(spacing: 8) {
+                    chip(batterySymbol(d), OthersPage.batteryText(d), help: Lang.t("電量", "Battery"))
+                    // 裝置沒有的資料（例如 M331 沒有 DPI、回報率）就不顯示標籤。
+                    if d.canSwitchStage {
+                        // 點標籤切換段（同按 DPI 鍵）；可寫的設定檔多一項「編輯各段…」。
+                        Menu {
+                            ForEach(Array(d.dpiStages.enumerated()).filter { $0.element > 0 }, id: \.offset) { item in
+                                Button {
+                                    model.setOtherStage(d.id, item.offset)
+                                } label: {
+                                    if d.stageIndex == item.offset { Label("\(item.element) DPI", systemImage: "checkmark") }
+                                    else { Text(verbatim: "\(item.element) DPI") }
+                                }
+                            }
+                            if d.canEditButtons {
+                                Divider()
+                                Button(Lang.t("編輯各段…", "Edit levels…")) { editingStages = d.id }
+                            }
+                        } label: {
+                            chip("speedometer", d.dpi > 0 ? "\(d.dpi) DPI" : "—",
+                                 help: Lang.t("指標速度（點一下切換段，和按 DPI 鍵一樣）", "Pointer speed (click to switch level, same as the DPI buttons)"))
+                        }
+                        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                        .popover(isPresented: Binding(get: { editingStages == d.id }, set: { if !$0 { editingStages = nil } }),
+                                 arrowEdge: .bottom) {
+                            StageEditor(device: d) { stages, defaultIndex, sector in
+                                model.setOtherStages(d.id, sector: sector, stages, defaultIndex: defaultIndex)
+                                editingStages = nil
+                            } onCancel: { editingStages = nil }
+                        }
+                    } else if d.dpi > 0 {
+                        chip("speedometer", "\(d.dpi) DPI", help: Lang.t("目前的指標速度", "Current pointer speed"))
+                    }
+                    if d.canEditButtons {
+                        // 可寫的設定檔：點標籤選回報率（存進設定檔）。
+                        Menu {
+                            ForEach(OtherDevicesProtocol.reportRates, id: \.self) { ms in
+                                Button {
+                                    model.setOtherReportRate(d.id, sector: d.activeProfile, ms: ms)
+                                } label: {
+                                    if ms == d.reportRateMs { Label("\(OtherDevicesProtocol.reportRateHz(ms: ms)) Hz", systemImage: "checkmark") }
+                                    else { Text(verbatim: "\(OtherDevicesProtocol.reportRateHz(ms: ms)) Hz") }
+                                }
+                            }
+                        } label: {
+                            chip("waveform.path", d.reportRateMs > 0 ? "\(OtherDevicesProtocol.reportRateHz(ms: d.reportRateMs)) Hz" : "—",
+                                 help: Lang.t("回報率（點一下修改，存進滑鼠的設定檔）", "Report rate (click to change; saved to the mouse's profile)"))
+                        }
+                        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                        .disabled(model.otherButtonBusy.contains(d.id))
+                    } else if d.reportRateMs > 0 {
+                        chip("waveform.path", "\(OtherDevicesProtocol.reportRateHz(ms: d.reportRateMs)) Hz",
+                             help: Lang.t("回報率", "Report rate"))
+                    }
+                    if d.onboardMode == 1 && d.profiles.count > 1 {
+                        Menu {
+                            ForEach(Array(d.profiles.enumerated()), id: \.element) { item in
+                                Button {
+                                    model.setOtherProfile(d.id, item.element)
+                                } label: {
+                                    let title = Lang.t("設定檔 \(item.offset + 1)", "Profile \(item.offset + 1)")
+                                    if d.activeProfile == item.element { Label(title, systemImage: "checkmark") } else { Text(title) }
+                                }
+                            }
+                        } label: {
+                            chip("square.stack.3d.up", d.profileNumber.map { Lang.t("設定檔 \($0)", "Profile \($0)") } ?? "—",
+                                 help: Lang.t("內建設定檔（點一下切換，和按設定檔鍵一樣；按鍵、DPI 與燈光跟著換）",
+                                              "Onboard profile (click to switch, same as the profile button; buttons, DPI and lighting follow)"))
+                        }
+                        .menuStyle(.button).buttonStyle(.plain).menuIndicator(.hidden).fixedSize()
+                    }
+                    if !d.lights.isEmpty && d.onboardMode == 1 {
+                        // 燈光：兩區一樣只寫一次效果名稱；點一下打開編輯（可寫的設定檔才能改）。
+                        let names = d.lights.map(LightEditor.summary)
+                        let text = Lang.t("燈光：", "Lighting: ") + (Set(names).count == 1 ? names[0] : names.joined(separator: "／"))
+                        Button { editingLights = d.id } label: {
+                            chip("lightbulb", text, help: Lang.t("燈光（點一下修改，存進滑鼠的設定檔）", "Lighting (click to change; saved to the mouse's profile)"))
+                        }
+                        .buttonStyle(.plain)
+                        .disabled(!d.canEditButtons || model.otherButtonBusy.contains(d.id))
+                        .popover(isPresented: Binding(get: { editingLights == d.id }, set: { if !$0 { editingLights = nil } }),
+                                 arrowEdge: .bottom) {
+                            LightEditor(lights: d.lights, sector: d.activeProfile) { changes, sector in
+                                model.setOtherLights(d.id, sector: sector, changes)
+                                editingLights = nil
+                            } onCancel: { editingLights = nil }
+                        }
+                    }
+                    Spacer(minLength: 0)
+                }
+                deviceBody(d)
+                // 不常看的資訊收成一行。
+                if !detailLine(d).isEmpty {
+                    Divider()
+                    Text(detailLine(d)).font(.system(size: 11)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+            } else {
+                Text(OthersPage.offlineText(d))
+                    .font(.system(size: 12)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                if d.batteryPercent >= 0 {
+                    Text(Lang.t("上次讀到的電量：", "Last battery reading: ") + OthersPage.batteryText(d))
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                }
+            }
+        }
+    }
+
+    // 卡片中段：G502 用可互動的向量圖；其他型號左邊放系列圖，右邊是按鍵清單或說明。
+    @ViewBuilder
+    private func deviceBody(_ d: OtherDeviceSnapshot) -> some View {
+        let picture = d.wpid == "407F" ? nil : OtherDeviceDiagrams.image(wpid: d.wpid)
+        if d.wpid == "407F" && !d.buttons.isEmpty {
+            Divider()
+            OtherButtonsSection(model: model, device: d)
+        } else if picture != nil || !d.buttons.isEmpty || d.onboardMode == 0 {
+            Divider()
+            HStack(alignment: .top, spacing: 16) {
+                if let picture {
+                    VStack(spacing: 4) {
+                        Image(nsImage: picture).resizable().interpolation(.high).scaledToFit()
+                            .frame(width: 164, height: 214)
+                        if !d.buttons.isEmpty {
+                            Text(Lang.t("示意圖，尚未對應右側清單", "Illustration; not linked to the list"))
+                                .font(.system(size: 10.5)).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                    }
+                }
+                if !d.buttons.isEmpty {
+                    OtherButtonsSection(model: model, device: d)
+                } else if d.onboardMode == 0 {
+                    Text(Lang.t("這個裝置沒有內建設定檔，目前可以查看電量和連線狀態。",
+                                "This device has no onboard profiles. Its battery and connection status are shown here."))
+                        .font(.system(size: 12)).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true).padding(.top, 8)
+                }
+                Spacer(minLength: 0)
+            }
+        }
+    }
+}
+
+// 同系列共用的示意圖（來源 MXMasterWin/assets/device-diagrams/windows），放在 App 的 Resources。
+enum OtherDeviceDiagrams {
+    private static let folder = "device-diagrams"
+    private static var images: [String: NSImage] = [:]
+    private static let models: [String: String] = {
+        guard let url = Bundle.main.url(forResource: "models", withExtension: "txt", subdirectory: folder),
+              let text = try? String(contentsOf: url, encoding: .utf8) else { return [:] }
+        var table: [String: String] = [:]
+        for line in text.split(whereSeparator: \.isNewline) {
+            let parts = line.split(separator: "=").map { $0.trimmingCharacters(in: .whitespaces) }
+            if parts.count == 2 { table[parts[0].uppercased()] = parts[1] }
+        }
+        return table
+    }()
+
+    static func image(wpid: String) -> NSImage? {
+        guard let family = models[wpid.uppercased()] else { return nil }
+        if let cached = images[family] { return cached }
+        guard let url = Bundle.main.url(forResource: family, withExtension: "png", subdirectory: folder),
+              let image = NSImage(contentsOf: url) else { return nil }
+        images[family] = image
+        return image
+    }
+}
+
+// 多台裝置時卡片上方的分頁：連線燈、名稱、電量；放不下時左右箭頭換頁。
+struct OtherDeviceTabs: View {
+    @ObservedObject var model: AppModel
+    @State private var first = 0
+
+    private typealias P = OtherDevicesProtocol
+
+    var body: some View {
+        GeometryReader { geometry in
+            let devices = model.otherDevices
+            let layout = P.tabLayout(count: devices.count, available: geometry.size.width)
+            let start = P.tabFirst(first, count: devices.count, fit: layout.fit)
+            HStack(spacing: P.tabGap) {
+                if layout.overflow { arrow("chevron.left", enabled: start > 0) { first = start - 1 } }
+                ForEach(Array(devices.enumerated()).filter { $0.offset >= start && $0.offset < start + layout.fit }, id: \.element.id) { item in
+                    tab(item.element, in: devices).frame(width: layout.width)
+                }
+                if layout.overflow {
+                    Spacer(minLength: 0)
+                    arrow("chevron.right", enabled: start + layout.fit < devices.count) { first = start + 1 }
+                }
+            }
+            .onAppear { reveal(devices, layout, start) }
+            .onChange(of: model.selectedOtherID) { reveal(devices, layout, start) }
+        }
+        .frame(height: 32)
+    }
+
+    // 只有選到新裝置才捲動分頁，按箭頭不會在下一次更新時被拉回去。
+    private func reveal(_ devices: [OtherDeviceSnapshot], _ layout: OtherTabLayout, _ start: Int) {
+        let index = devices.firstIndex { $0.id == model.selectedOtherID }
+        first = P.tabFirst(start, count: devices.count, fit: layout.fit, revealing: index)
+    }
+
+    private func arrow(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol).font(.system(size: 11, weight: .semibold))
+                .frame(width: P.tabArrowWidth, height: 30)
+                .background(RoundedRectangle(cornerRadius: 8, style: .continuous).fill(Color.primary.opacity(0.05)))
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain).disabled(!enabled).opacity(enabled ? 1 : 0.35)
+    }
+
+    private func title(_ d: OtherDeviceSnapshot, in devices: [OtherDeviceSnapshot]) -> String {
+        let name = OthersPage.shortName(d)
+        return devices.filter { OthersPage.shortName($0) == name }.count > 1 ? "\(name) #\(d.slot)" : name
+    }
+
+    private func tab(_ d: OtherDeviceSnapshot, in devices: [OtherDeviceSnapshot]) -> some View {
+        let selected = d.id == model.selectedOther?.id
+        let online = d.link == .online
+        let state = online ? (d.batteryPercent >= 0 ? "\(d.batteryPercent)%" : "—") : Lang.t("離線", "Offline")
+        return Button { model.selectedOtherID = d.id } label: {
+            HStack(spacing: 5) {
+                Circle().fill(online ? (selected ? Color.white : Color.green) : Color.gray).frame(width: 7, height: 7)
+                Text(title(d, in: devices)).font(.system(size: 12, weight: .semibold)).lineLimit(1).truncationMode(.tail)
+                Spacer(minLength: 0)
+                Text(state).font(.system(size: 10.5)).monospacedDigit().lineLimit(1).fixedSize()
+                    .foregroundStyle(selected ? Color.white.opacity(0.85) : Color.secondary)
+            }
+            .foregroundStyle(selected ? Color.white : Color.primary)
+            .padding(.horizontal, 7)
+            .frame(maxWidth: .infinity, minHeight: 30, maxHeight: 30)
+            .background(RoundedRectangle(cornerRadius: 8, style: .continuous)
+                .fill(selected ? Color.accentColor : Color.primary.opacity(0.05)))
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(d.name)
+    }
+}
+
+// MARK: - 其他裝置的按鍵（寫入滑鼠的內建設定檔；「交給 App」的鍵由 App 執行動作）
+
+struct OtherButtonsSection: View {
+    @ObservedObject var model: AppModel
+    let device: OtherDeviceSnapshot
+    @State private var highlight: Int?
+
+    // 可選的功能（存在滑鼠裡，App 沒開也有效）。鍵盤快捷鍵用 HID 鍵碼：08 Command、01 Control、02 Shift。
+    static let presets: [(group: String, items: [(title: String, value: OtherButtonAssignment)])] = [
+        (Lang.t("滑鼠", "Mouse"), [(Lang.t("左鍵", "Left click"), .mouse(1)), (Lang.t("右鍵", "Right click"), .mouse(2)),
+                                    (Lang.t("中鍵", "Middle click"), .mouse(3)), (Lang.t("上一頁", "Back"), .mouse(4)),
+                                    (Lang.t("下一頁", "Forward"), .mouse(5))]),
+        (Lang.t("指標速度與設定檔", "Pointer speed & profiles"),
+         [(Lang.t("DPI 上", "DPI up"), .function(3)), (Lang.t("DPI 下", "DPI down"), .function(4)),
+          (Lang.t("循環切換 DPI", "Cycle DPI"), .function(5)), (Lang.t("狙擊（按住降速）", "Sniper (hold to slow)"), .function(7)),
+          (Lang.t("下一個設定檔", "Next profile"), .function(8)), (Lang.t("上一個設定檔", "Previous profile"), .function(9)),
+          (Lang.t("顯示電量", "Show battery"), .function(0x0C))]),
+        (Lang.t("捲動", "Scrolling"), [(Lang.t("向左捲動", "Scroll left"), .function(1)), (Lang.t("向右捲動", "Scroll right"), .function(2))]),
+        (Lang.t("媒體", "Media"), [(Lang.t("播放／暫停", "Play / pause"), .consumer(0xCD)), (Lang.t("下一首", "Next track"), .consumer(0xB5)),
+                                   (Lang.t("上一首", "Previous track"), .consumer(0xB6)), (Lang.t("音量＋", "Volume up"), .consumer(0xE9)),
+                                   (Lang.t("音量－", "Volume down"), .consumer(0xEA)), (Lang.t("靜音", "Mute"), .consumer(0xE2))]),
+        (Lang.t("快捷鍵", "Shortcuts"), [(Lang.t("拷貝 ⌘C", "Copy ⌘C"), .key(modifiers: 0x08, usage: 0x06)),
+                                        (Lang.t("貼上 ⌘V", "Paste ⌘V"), .key(modifiers: 0x08, usage: 0x19)),
+                                        (Lang.t("剪下 ⌘X", "Cut ⌘X"), .key(modifiers: 0x08, usage: 0x1B)),
+                                        (Lang.t("還原 ⌘Z", "Undo ⌘Z"), .key(modifiers: 0x08, usage: 0x1D)),
+                                        (Lang.t("切換 App ⌘Tab", "App switcher ⌘Tab"), .key(modifiers: 0x08, usage: 0x2B)),
+                                        ("Mission Control ⌃↑", .key(modifiers: 0x01, usage: 0x52)),
+                                        (Lang.t("截圖選取範圍 ⇧⌘4", "Screenshot area ⇧⌘4"), .key(modifiers: 0x0A, usage: 0x21))]),
+    ]
+
+    static func title(_ a: OtherButtonAssignment, model: AppModel, device: OtherDeviceSnapshot) -> String {
+        if let n = a.appButton {
+            let binding = model.otherAction(device, number: n)
+            return binding.isPassThrough ? Lang.t("交給 App（還沒選動作）", "Handled by the app (no action yet)")
+                                         : Lang.t("App：", "App: ") + binding.title
+        }
+        if a == .disabled { return Lang.t("停用", "Disabled") }
+        for group in presets { if let hit = group.items.first(where: { $0.value == a }) { return hit.title } }
+        if case .mouse(let n) = a { return Lang.t("滑鼠第 \(n) 鍵", "Mouse button \(n)") }
+        return Lang.t("其他（", "Other (") + a.bytes.map { String(format: "%02X", $0) }.joined(separator: " ") + Lang.t("）", ")")
+    }
+
+    var body: some View {
+        let busy = model.otherButtonBusy.contains(device.id)
+        VStack(alignment: .leading, spacing: 6) {
+            HStack {
+                HStack(alignment: .firstTextBaseline, spacing: 8) {
+                    Text(Lang.t("按鍵", "Buttons")).font(.system(size: 12.5, weight: .semibold))
+                    Text(device.canEditButtons
+                         ? Lang.t("存在滑鼠的設定檔裡；「交給 App」的鍵要 App 開著", "Saved in the mouse's profile; keys handed to the app need it running")
+                         : device.writeVerified ? Lang.t("這個設定檔不能改", "This profile can't be changed")
+                         : Lang.t("這個型號還沒實機驗證，先不開放修改", "This model hasn't been verified yet, so editing is off"))
+                        .font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1)
+                        .help(Lang.t("改完直接存進滑鼠目前的設定檔，App 沒開、換電腦也有效。寫入前會先備份，可以按「還原原本的設定檔」改回來。",
+                                     "Saved straight to the mouse's current profile, so it works without the app or on other computers. A backup is made first; use Restore original profile to undo."))
+                }
+                Spacer(minLength: 8)
+                if busy { ProgressView().controlSize(.small) }
+            }
+            // G502：左邊示意圖、右邊兩欄按鍵（同 Windows 版）；其他裝置只列清單。
+            if device.wpid == "407F" {
+                HStack(alignment: .top, spacing: 12) {
+                    G502Diagram(highlight: $highlight, count: device.buttons.count).frame(width: 194, height: 248)
+                    let rows = (device.buttons.count + 1) / 2
+                    HStack(alignment: .top, spacing: 6) {
+                        column(0..<rows)
+                        column(rows..<device.buttons.count)
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            } else {
+                list
+            }
+            HStack(spacing: 10) {
+                if let message = model.otherButtonMessage[device.id] {
+                    Text(message).font(.system(size: 11.5)).foregroundStyle(.secondary)
+                }
+                Spacer()
+                if model.hasOriginalButtons(device) {
+                    Button(Lang.t("還原原本的設定檔", "Restore original profile")) { model.restoreOtherButtons(device.id, sector: device.activeProfile) }
+                        .controlSize(.small).disabled(busy || !device.canEditButtons)
+                }
+            }
+        }
+        .disabled(busy)
+    }
+
+    private func column(_ indices: Range<Int>) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(Array(indices), id: \.self) { index in
+                cell(index, device.buttons[index])
+            }
+        }
+    }
+
+    // 一格：編號在左，鍵名在上、選單在下。
+    private func cell(_ index: Int, _ value: OtherButtonAssignment) -> some View {
+        let name = OtherDevicesProtocol.buttonName(wpid: device.wpid, index: index)
+        let info = VStack(alignment: .leading, spacing: 2) {
+            Text(Lang.t(name.zh, name.en)).font(.system(size: 11)).foregroundStyle(.secondary)
+            control(index, value, width: 172, trailing: false)
+        }
+        return HStack(spacing: 4) {
+            NumberBadge(text: "\(index + 1)", active: highlight == index).scaleEffect(0.8)
+            info
+        }
+        .padding(.vertical, 2).padding(.horizontal, 4)
+        .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+            .fill(highlight == index ? Color.accentColor.opacity(0.10) : Color.clear))
+        .contentShape(Rectangle())
+        .onHover { inside in
+            if inside { highlight = index } else if highlight == index { highlight = nil }
+        }
+    }
+
+    private var list: some View {
+        VStack(spacing: 0) {
+            ForEach(Array(device.buttons.enumerated()), id: \.offset) { item in
+                row(item.offset, item.element)
+                    .padding(.vertical, 1).padding(.horizontal, 4)
+                    .background(RoundedRectangle(cornerRadius: 7, style: .continuous)
+                        .fill(highlight == item.offset ? Color.accentColor.opacity(0.10) : Color.clear))
+                    .contentShape(Rectangle())
+                    .onHover { inside in
+                        if inside { highlight = item.offset } else if highlight == item.offset { highlight = nil }
+                    }
+            }
+        }
+    }
+
+    // 選單（左鍵鎖住）；「交給 App」的鍵下面多一個動作選單。
+    @ViewBuilder
+    private func control(_ index: Int, _ value: OtherButtonAssignment, width: CGFloat, trailing: Bool) -> some View {
+        let align: Alignment = trailing ? .trailing : .leading
+        if index == 0 {
+            // 左鍵不讓改，免得改錯之後連點都點不了。
+            HStack(spacing: 4) {
+                Text(OtherButtonsSection.title(value, model: model, device: device)).font(.system(size: 12)).foregroundStyle(.secondary)
+                Image(systemName: "lock.fill").font(.system(size: 10)).foregroundStyle(.secondary)
+            }
+            .frame(width: width, height: 20, alignment: align)   // 和其他列的選單同高，左右兩欄才對齊
+            .help(Lang.t("左鍵固定是左鍵", "The left button always stays a left click"))
+        } else {
+            Menu(OtherButtonsSection.title(value, model: model, device: device)) {
+                ForEach(OtherButtonsSection.presets, id: \.group) { group in
+                    Section(group.group) {
+                        ForEach(group.items, id: \.title) { item in
+                            Button(item.title) { model.setOtherButton(device.id, sector: device.activeProfile, index: index, item.value) }
+                        }
+                    }
+                }
+                Divider()
+                Button(Lang.t("交給 App（可選任何動作）", "Hand to the app (any action)")) {
+                    if value.appButton == nil, let n = OtherDevicesProtocol.freeAppButton(device.buttons, except: index) {
+                        model.setOtherButton(device.id, sector: device.activeProfile, index: index, .mouse(n))
+                    }
+                }
+                Button(Lang.t("停用", "Disabled")) { model.setOtherButton(device.id, sector: device.activeProfile, index: index, .disabled) }
+            }
+            .controlSize(.small)
+            .frame(width: width, alignment: align)
+            .disabled(!device.canEditButtons)
+            if let n = value.appButton {
+                ActionPicker(value: Binding(get: { model.otherAction(device, number: n) },
+                                            set: { model.setOtherAction(device, number: n, $0) }),
+                             allowsGestureHold: true)
+                    .controlSize(.small).frame(width: width)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func row(_ index: Int, _ value: OtherButtonAssignment) -> some View {
+        let name = OtherDevicesProtocol.buttonName(wpid: device.wpid, index: index)
+        VStack(alignment: .leading, spacing: 4) {
+        HStack(spacing: 8) {
+            NumberBadge(text: "\(index + 1)", active: highlight == index).scaleEffect(0.85)
+            Text(Lang.t(name.zh, name.en)).font(.system(size: 12)).frame(width: 104, alignment: .leading)
+            control(index, value, width: 180, trailing: false)
+            Spacer(minLength: 0)
+        }
+        }
+    }
+}
+
+// MARK: - 編輯各段指標速度（寫入滑鼠的設定檔）
+
+struct StageEditor: View {
+    let device: OtherDeviceSnapshot
+    let onSave: ([Int], Int?, Int) -> Void     // 各段、開機預設段、打開編輯器時的設定檔
+    let onCancel: () -> Void
+    @State private var values: [Int]
+    @State private var defaultIndex: Int
+    @State private var sector: Int             // 開著編輯器時滑鼠切到別的設定檔，還是寫回這一個的判斷依據
+
+    init(device: OtherDeviceSnapshot, onSave: @escaping ([Int], Int?, Int) -> Void, onCancel: @escaping () -> Void) {
+        self.device = device
+        self.onSave = onSave
+        self.onCancel = onCancel
+        _values = State(initialValue: device.dpiStages)
+        _defaultIndex = State(initialValue: max(device.defaultStage, 0))
+        _sector = State(initialValue: device.activeProfile)
+    }
+
+    private var low: Int { device.dpiMin > 0 ? device.dpiMin : 100 }
+    private var high: Int { device.dpiMax > 0 ? device.dpiMax : 25_600 }
+    private func valid(_ i: Int) -> Bool {
+        OtherDevicesProtocol.validStage(values[i], original: device.dpiStages.indices.contains(i) ? device.dpiStages[i] : 0, min: low, max: high)
+    }
+    private var allValid: Bool { values.indices.allSatisfy(valid) && values.indices.contains(defaultIndex) && values[defaultIndex] > 0 }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Text(Lang.t("各段指標速度", "Pointer speed levels")).font(.system(size: 13, weight: .semibold))
+            Text(Lang.t("\(low)–\(high) DPI，以 50 為單位；存進滑鼠目前的設定檔（寫入前會備份）",
+                        "\(low)–\(high) DPI in steps of 50; saved to the mouse's current profile (backed up first)"))
+                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            Grid(alignment: .leading, horizontalSpacing: 10, verticalSpacing: 6) {
+                GridRow {
+                    Text(Lang.t("段", "Level")).font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text("DPI").font(.system(size: 11)).foregroundStyle(.secondary)
+                    Text(Lang.t("開機預設", "Default")).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                ForEach(values.indices, id: \.self) { i in
+                    if device.dpiStages.indices.contains(i), device.dpiStages[i] > 0 {
+                        GridRow {
+                            Text(verbatim: "\(i + 1)").font(.system(size: 12.5)).monospacedDigit()
+                            HStack(spacing: 4) {
+                                TextField("", value: $values[i], format: .number.grouping(.never))
+                                    .textFieldStyle(.roundedBorder).frame(width: 70).monospacedDigit()
+                                    .foregroundStyle(valid(i) ? Color.primary : Color.red)
+                                Stepper("", value: $values[i], in: low...high, step: 50).labelsHidden()
+                            }
+                            Image(systemName: defaultIndex == i ? "largecircle.fill.circle" : "circle")
+                                .foregroundStyle(defaultIndex == i ? Color.accentColor : Color.secondary)
+                                .onTapGesture { defaultIndex = i }
+                        }
+                    }
+                }
+            }
+            if !allValid {
+                Text(Lang.t("紅字的數值超出範圍或不是 50 的倍數", "Values in red are out of range or not a multiple of 50"))
+                    .font(.system(size: 11)).foregroundStyle(.red)
+            }
+            HStack {
+                Spacer()
+                Button(Lang.t("取消", "Cancel"), action: onCancel)
+                Button(Lang.t("寫入滑鼠", "Save to mouse")) { onSave(values, defaultIndex, sector) }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(!allValid || (values == device.dpiStages && defaultIndex == device.defaultStage))
+            }
+        }
+        .padding(16)
+        .frame(width: 300)
+    }
+}
+
+// MARK: - 燈光（寫入滑鼠的設定檔；G502：主要區域、G 標誌）
+
+struct LightEditor: View {
+    let original: [OtherLightEffect]
+    let onSave: ([Int: OtherLightEffect], Int) -> Void   // 改動、打開編輯器時的設定檔
+    let onCancel: () -> Void
+    @State private var sector: Int
+    @State private var kinds: [Int]          // 0 關閉、1 固定顏色、2 色彩循環、3 呼吸
+    @State private var colors: [Color]
+    @State private var seconds: [Double]
+    @State private var brightness: [Double]
+
+    init(lights: [OtherLightEffect], sector: Int, onSave: @escaping ([Int: OtherLightEffect], Int) -> Void, onCancel: @escaping () -> Void) {
+        original = lights
+        self.onSave = onSave
+        self.onCancel = onCancel
+        _sector = State(initialValue: sector)
+        var k: [Int] = [], c: [Color] = [], sec: [Double] = [], br: [Double] = []
+        for light in lights {
+            switch light {
+            case .off: k.append(0); c.append(.white); sec.append(5); br.append(100)
+            case .fixed(let r, let g, let b): k.append(1); c.append(LightEditor.color(r, g, b)); sec.append(5); br.append(100)
+            case .cycle(let p, let v): k.append(2); c.append(.white); sec.append(Double(p) / 1000); br.append(Double(v))
+            case .breathe(let r, let g, let b, let p, let v):
+                k.append(3); c.append(LightEditor.color(r, g, b)); sec.append(Double(p) / 1000); br.append(Double(v))
+            case .unknown: k.append(-1); c.append(.white); sec.append(5); br.append(100)
+            }
+        }
+        _kinds = State(initialValue: k)
+        _colors = State(initialValue: c)
+        _seconds = State(initialValue: sec)
+        _brightness = State(initialValue: br)
+    }
+
+    static func zoneName(_ zone: Int) -> String {
+        zone == 0 ? Lang.t("主要", "Main") : zone == 1 ? Lang.t("標誌", "Logo") : Lang.t("區域 \(zone + 1)", "Zone \(zone + 1)")
+    }
+
+    static func summary(_ e: OtherLightEffect) -> String {
+        switch e {
+        case .off: return Lang.t("關閉", "Off")
+        case .fixed: return Lang.t("固定顏色", "Fixed color")
+        case .cycle: return Lang.t("色彩循環", "Color cycle")
+        case .breathe: return Lang.t("呼吸", "Breathing")
+        case .unknown: return Lang.t("其他效果", "Other effect")
+        }
+    }
+
+    static func color(_ r: UInt8, _ g: UInt8, _ b: UInt8) -> Color {
+        Color(.sRGB, red: Double(r) / 255, green: Double(g) / 255, blue: Double(b) / 255)
+    }
+
+    static func rgb(_ color: Color) -> (UInt8, UInt8, UInt8) {
+        let c = NSColor(color).usingColorSpace(.sRGB) ?? .white
+        func byte(_ v: CGFloat) -> UInt8 { UInt8(min(max((v * 255).rounded(), 0), 255)) }
+        return (byte(c.redComponent), byte(c.greenComponent), byte(c.blueComponent))
+    }
+
+    private func effect(_ zone: Int) -> OtherLightEffect {
+        let (r, g, b) = LightEditor.rgb(colors[zone])
+        let period = Int((seconds[zone] * 1000).rounded())
+        switch kinds[zone] {
+        case 0: return .off
+        case 1: return .fixed(r: r, g: g, b: b)
+        case 2: return .cycle(period: period, brightness: Int(brightness[zone]))
+        case 3: return .breathe(r: r, g: g, b: b, period: period, brightness: Int(brightness[zone]))
+        default: return original[zone]
+        }
+    }
+
+    private var changes: [Int: OtherLightEffect] {
+        var out: [Int: OtherLightEffect] = [:]
+        for zone in original.indices where effect(zone) != original[zone] { out[zone] = effect(zone) }
+        return out
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text(Lang.t("燈光", "Lighting")).font(.system(size: 13, weight: .semibold))
+            ForEach(original.indices, id: \.self) { zone in
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack {
+                        Text(zone == 0 ? Lang.t("主要區域", "Main zone") : zone == 1 ? Lang.t("G 標誌", "G logo") : LightEditor.zoneName(zone))
+                            .font(.system(size: 12.5, weight: .medium))
+                        Spacer()
+                        if [1, 3].contains(kinds[zone]) {
+                            ColorPicker("", selection: $colors[zone], supportsOpacity: false).labelsHidden()
+                        }
+                    }
+                    Picker("", selection: $kinds[zone]) {
+                        Text(Lang.t("關閉", "Off")).tag(0)
+                        Text(Lang.t("固定", "Fixed")).tag(1)
+                        Text(Lang.t("循環", "Cycle")).tag(2)
+                        Text(Lang.t("呼吸", "Breathe")).tag(3)
+                        if kinds[zone] == -1 { Text(Lang.t("其他", "Other")).tag(-1) }
+                    }
+                    .pickerStyle(.segmented).labelsHidden()
+                    if [2, 3].contains(kinds[zone]) {
+                        HStack(spacing: 8) {
+                            Text(Lang.t("速度", "Speed")).font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 40, alignment: .leading)
+                            Slider(value: $seconds[zone], in: 1...20, step: 0.5)
+                            Text(String(format: Lang.t("%.1f 秒", "%.1f s"), seconds[zone])).font(.system(size: 11)).monospacedDigit().frame(width: 44)
+                        }
+                        HStack(spacing: 8) {
+                            Text(Lang.t("亮度", "Brightness")).font(.system(size: 11)).foregroundStyle(.secondary).frame(width: 40, alignment: .leading)
+                            Slider(value: $brightness[zone], in: 10...100, step: 5)
+                            Text(verbatim: "\(Int(brightness[zone]))%").font(.system(size: 11)).monospacedDigit().frame(width: 44)
+                        }
+                    }
+                }
+                if zone < original.count - 1 { Divider() }
+            }
+            Text(Lang.t("存進滑鼠目前的設定檔（寫入前會備份）", "Saved to the mouse's current profile (backed up first)"))
+                .font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            HStack {
+                Spacer()
+                Button(Lang.t("取消", "Cancel"), action: onCancel)
+                Button(Lang.t("寫入滑鼠", "Save to mouse")) { onSave(changes, sector) }
+                    .keyboardShortcut(.defaultAction)
+                    .disabled(changes.isEmpty)
+            }
+        }
+        .padding(16)
+        .frame(width: 320)
     }
 }

@@ -115,8 +115,10 @@ final class BoltReceiver {
     private func runLoop() {
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         self.manager = manager
+        // 只開 HID++ 的廠商介面（0xFF00）；滑鼠／鍵盤介面不開，移動回報才不會送進 App。
         IOHIDManagerSetDeviceMatching(manager, [kIOHIDVendorIDKey: BoltReceiver.vendor,
-                                                kIOHIDProductIDKey: BoltReceiver.product] as CFDictionary)
+                                                kIOHIDProductIDKey: BoltReceiver.product,
+                                                kIOHIDPrimaryUsagePageKey: 0xFF00] as CFDictionary)
         let context = Unmanaged.passUnretained(self).toOpaque()
         IOHIDManagerRegisterDeviceMatchingCallback(manager, { context, _, _, device in
             Unmanaged<BoltReceiver>.fromOpaque(context!).takeUnretainedValue().matched(device)

@@ -7,6 +7,7 @@ struct KeyboardSnapshot: Equatable {
     var transport = "BLE"
     var batteryPercent = -1
     var charging = false
+    var full = false        // 0x1004 狀態 3：已充飽（這時 charging 是 false）
     var firmware = ""
     var hosts: [HostEntry] = []
     var currentHost = -1
@@ -65,7 +66,19 @@ final class KeyboardHIDPP {
     private func runLoop() {
         let manager = IOHIDManagerCreate(kCFAllocatorDefault, IOOptionBits(kIOHIDOptionsTypeNone))
         self.manager = manager
-        IOHIDManagerSetDeviceMatching(manager, [kIOHIDVendorIDKey: KeyboardHIDPP.vendor] as CFDictionary)
+        // 只比對藍牙：IOHIDManagerOpen 會打開「所有」比對到的裝置。舊版只比對廠商 ID，連 G502 的 Lightspeed 接收器
+        // （USB）的滑鼠介面也一起開著，每秒 1000 筆移動回報都送進來，快速移動時游標會閃現（2026-11-20 使用者回報、
+        // 關掉 App 就不閃；ioreg 看到 MXMasterMac 開著 C539 的 usage page 1 介面）。只支援藍牙鍵盤，USB 本來就不用。
+        // 注意：SDK 常數 kIOHIDTransportBluetoothLowEnergyValue 是 "BluetoothLowEnergy"，但 macOS 27 上 MX Mechanical Mini
+        // 與 MX Master 4 實際的 Transport 是 "Bluetooth Low Energy"（有空格，ioreg 查證，2026-11-20）；只用常數會比對不到鍵盤。
+        // 再限定鍵盤類介面（usage page 1、usage 6）：放寬到藍牙後 MX Master 4（B042，滑鼠類 1/2）也會被比對到、
+        // 被這個管理器打開；excludedProducts 是打開之後才過濾，擋不住。MX Mechanical Mini 的 HID++ 介面就是 1/6。
+        let transports = [kIOHIDTransportBluetoothValue, kIOHIDTransportBluetoothLowEnergyValue, "Bluetooth Low Energy"]
+        let matches = transports.map {
+            [kIOHIDVendorIDKey: KeyboardHIDPP.vendor, kIOHIDTransportKey: $0,
+             kIOHIDPrimaryUsagePageKey: 0x01, kIOHIDPrimaryUsageKey: 0x06] as [String: Any]
+        }
+        IOHIDManagerSetDeviceMatchingMultiple(manager, matches as CFArray)
         let context = Unmanaged.passUnretained(self).toOpaque()
         IOHIDManagerRegisterDeviceMatchingCallback(manager, { context, _, _, device in
             Unmanaged<KeyboardHIDPP>.fromOpaque(context!).takeUnretainedValue().matched(device)
@@ -303,6 +316,7 @@ final class KeyboardHIDPP {
         if let reply = call(0x1004, 1) {
             s.batteryPercent = Int(reply[4])
             s.charging = reply[6] == 1 || reply[6] == 2
+            s.full = reply[6] == 3
         }
         if let count = call(0x0003, 0) {
             for i in 0..<min(Int(count[4]), 8) {

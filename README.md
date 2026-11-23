@@ -8,9 +8,9 @@
   <img src="Resources/app.png" width="128" alt="MX Master Mac app icon">
 </p>
 
-MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：常駐選單列，不裝 Logi Options+ 也能自訂按鍵、拇指手勢與 Actions Ring 圓環，並調整指標速度、SmartShift、捲動方向與觸覺回饋；2.0 起新增 **MX Flow**，把游標推到螢幕邊緣就能讓滑鼠切到另一台電腦；2.3 起也支援 Logitech 鍵盤，可以查看電量、設定背光與 F 鍵，並讓鍵盤跟著滑鼠一起切換電腦；2.4 起可以直接在 App 裡配對 Logi Bolt 接收器。它和 Windows 版 [MX Master Win](https://github.com/stone5202/MXMasterWin)（原名 MX Master Portable）是同一個產品的兩個版本，功能與設定方式一致，macOS 版以 Swift 重新寫成；兩台電腦各裝一個版本，就能用 MX Flow 在 Mac 與 Windows 之間來回切換。
+MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：常駐選單列，不裝 Logi Options+ 也能自訂按鍵、拇指手勢與 Actions Ring 圓環，並調整指標速度、SmartShift、捲動方向與觸覺回饋；2.0 起新增 **MX Flow**，把游標推到螢幕邊緣就能讓滑鼠切到另一台電腦；2.3 起也支援 Logitech 鍵盤，可以查看電量、設定背光與 F 鍵，並讓鍵盤跟著滑鼠一起切換電腦；2.4 起可以直接在 App 裡配對 Logi Bolt 接收器；2.5 起可以查看其他羅技裝置的電量與狀態，並設定 G502 LIGHTSPEED。它和 Windows 版 [MX Master Win](https://github.com/stone5202/MXMasterWin)（原名 MX Master Portable）是同一個產品的兩個版本，功能與設定方式一致，macOS 版以 Swift 重新寫成；兩台電腦各裝一個版本，就能用 MX Flow 在 Mac 與 Windows 之間來回切換。
 
-> 目前版本：2.4 · 介面語言：繁體中文、English（預設跟隨系統）
+> 目前版本：2.5 · 介面語言：繁體中文、English（預設跟隨系統）
 
 各版本的更新內容請參閱 [更新紀錄](CHANGELOG.md) 或 [GitHub Releases](https://github.com/stone5202/MXMasterMac/releases)。
 
@@ -53,11 +53,13 @@ MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：�
 </p>
 
 <p align="center">
+  <img src="docs/screenshots/others.zh-TW.png" width="45%" alt="其他裝置頁：裝置分頁、G502 示意圖與按鍵">
+  &nbsp;
   <img src="docs/screenshots/advanced.zh-TW.png" width="45%" alt="進階頁：電池與權限">
 </p>
 
 <p align="center">
-  進階（電池）
+  其他裝置 · 進階（電池）
 </p>
 
 ## 下載與使用
@@ -78,13 +80,15 @@ MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：�
 - **拇指四向手勢**：按住手勢鍵並滑動，四個方向的動作與靈敏度都可自訂。
 - **觸覺回饋**：調整滑鼠的震動強度，並分別設定四種震動時機：圓環滑過選項、手勢方向確定、切換電腦前、模式切換。每一種都能開關、從 6 種波形中挑選並試震。
 - **精準模式**：按住指定按鍵時把指標速度暫時降到較低的 DPI（預設 400），放開就恢復，適合修圖、對齊等精細操作；也可以從圓環或手勢開關。切換精準模式或段落／自由滾動時，螢幕下方會短暫顯示目前狀態。
-- **電池**（「進階」頁）：電量降到門檻（預設 15%）且沒有充電時發出一次系統通知，並可自動暫停震動以省電。
+- **電池**（「進階」頁）：每台裝置可以有自己的低電量門檻與充飽通知，電量低時可自動暫停震動以省電；「電池歷史」圖顯示最近 30 天的電量。
 - **裝置設定**：顯示電量與韌體版本；調整指標速度（DPI）、SmartShift、段落力道、捲動方向、主滾輪高解析度、拇指滾輪方向與觸覺回饋強度。套用過的數值會保存，滑鼠重新連線後自動再套用。
 - **MX Flow**：游標持續推著螢幕邊緣，滑鼠就切到指定的 Easy-Switch 頻道（另一台電腦）。四個邊緣可分別指定頻道，觸發時間可調，可要求按住一個鍵盤按鍵或滑鼠按鍵才切換；多螢幕時只有最外側螢幕的外緣會觸發。也會列出三個頻道記錄的電腦名稱，並可直接按鈕切換；選單列的選單裡也有 MX Flow 開關。
 - **鍵盤**（2.3 起）：以藍牙連到這台 Mac 的 Logitech 鍵盤（實測 MX Mechanical Mini），在「鍵盤」頁顯示連線、電量、韌體，設定背光（自動／手動亮度／關閉）與最上排按鍵預設是媒體鍵或 F1–F12；2.4 起還能停用鍵盤允許停用的按鍵（例如 Caps Lock）、設定目前頻道的作業系統配置，以及背光在手離開、手靠近、接上電源時的延遲時間；左下角同時顯示滑鼠與鍵盤的電量。
 - **鍵盤一起切換**（2.3 起）：滑鼠切到另一台電腦時（MX Flow、「切換到頻道」動作或「切換過去」按鈕），鍵盤也切到對應的 Easy-Switch 頻道。每個滑鼠頻道可指定鍵盤頻道，預設自動對應（同名電腦的頻道，否則同一個頻道號）。
 - **Logi Bolt 接收器**（2.4 起）：在「接收器」頁配對新的滑鼠或鍵盤（鍵盤輸入數字、滑鼠按左右鍵驗證）、列出已配對的裝置並解除配對，不必安裝 Logi Bolt 或 Options+。
 - **頻道名稱**（2.4 起）：滑鼠或鍵盤目前頻道記錄的名稱和這台電腦不同時（例如「Logitech Bolt receiver」），會寫入這台電腦的名稱，MX Flow 與鍵盤自動對應因此更準確。
+- **其他裝置**（2.5 起）：列出 Lightspeed、Unifying 與 Nano 接收器上的羅技裝置（實測 G502 LIGHTSPEED、M331），顯示連線、電量、指標速度、回報率與韌體，多台時用分頁切換，並附同系列的示意圖。
+- **G502 LIGHTSPEED**（2.5 起）：切換 DPI 段與內建設定檔，修改各段 DPI、回報率、燈光與按鍵。設定存在滑鼠裡，寫入前備份、寫入後讀回比對，可以還原；按鍵也可以交給 App，執行任何動作、手勢或圓環。
 - **切換連線後自動恢復**：滑鼠切到別台電腦再切回來，或在 Bluetooth 與 Logi Bolt 之間切換，專用按鍵會自動重新啟用。
 - **其他**：設定自動儲存、只會執行一份、可暫停、可設定登入時自動啟動、介面可切換中文／英文。
 - **工程模式**：檢視滑鼠送出的事件，方便回報問題。
@@ -94,7 +98,8 @@ MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：�
 - macOS 14 或更新版本，Apple 晶片（開發與測試環境為 macOS 27）
 - Logitech MX Master 4（Bluetooth 或 Logi Bolt 接收器）
 - 鍵盤功能（選用）：以藍牙連線、支援 HID++ 2.0 的 Logitech 鍵盤
-- 接收器頁（選用）：Logi Bolt 接收器（不支援 Unifying）
+- 接收器頁（選用）：Logi Bolt 接收器（配對不支援 Unifying）
+- 其他裝置頁（選用）：Lightspeed、Unifying 或 Nano 接收器上的羅技裝置
 
 ## 需要的權限
 
@@ -107,13 +112,14 @@ MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：�
 - 只在 MX Master 4（韌體 `RBM 27.03`）上開發與測試；其他型號沒有測過。
 - 發布檔沒有 Apple 公證，也沒有開發者簽章；更新版本後可能需要重新允許兩個權限。
 - 與 Logi Options+ 同時執行時，兩者會互相覆寫按鍵改道與裝置設定，請擇一使用。
-- 側鍵與拇指滾輪的對應會套用到所有滑鼠（系統事件分不出來源裝置）。
+- 側鍵與拇指滾輪的對應會套用到其他一般滑鼠；Lightspeed 接收器上的滑鼠（例如 G502）不套用，在「其他裝置」頁設定。
+- 其他裝置頁只實測過 G502 LIGHTSPEED 與 M331，Unifying 接收器沒有實測。修改設定只開放 G502 LIGHTSPEED，其他型號先只顯示資訊。
 - 指揮中心、App Exposé、顯示桌面、切換桌面等動作是送出系統預設的快捷鍵；在「系統設定 → 鍵盤 → 鍵盤快速鍵」改過或關掉的話不會有作用。
 - MX Flow 不傳送剪貼簿或檔案。另一台電腦也要執行有 MX Flow 的版本並設定邊緣，才能用同樣方式切回來；鍵盤要一起切回來，另一台也要是有「鍵盤一起切換」的版本，否則請按滑鼠底部與鍵盤上的 Easy‑Switch 鍵。
 - 鍵盤功能只在 MX Mechanical Mini 上測過，目前只支援藍牙連線的鍵盤（經 Logi Bolt 接收器連到 Mac 的鍵盤，鍵盤頁還不支援，但可以在接收器頁配對／解除）；用 Bolt 配對的頻道在鍵盤上常記成「Logitech Bolt receiver」，自動對應會用同一個頻道號，必要時請在 MX Flow 頁手動指定。
 - 滑鼠重新連上這台電腦時分不出是從哪裡切回來的；設定了多個邊緣時，游標不會自動移到邊緣。
 - 不包含 Options+ 的逐應用程式設定與韌體更新。
-- 示意圖上的按鍵位置為示意，尚未逐一對照實體校正。
+- 示意圖上的按鍵位置為示意，尚未逐一對照實體校正；G502 以外的系列圖尚未對應按鍵清單。
 
 ## 運作方式
 
@@ -123,14 +129,15 @@ MX Master Mac 是一款給 Logitech MX Master 4 用的 macOS 輕量小工具：�
 - MX Flow：`NSEvent` 監看游標移動，判斷是否貼著最外側螢幕的外緣並持續往外推；以 HID++ 功能 `0x1814`（切換主機）送出切換，`0x1815` 讀取各頻道的主機名稱，並在目前頻道名稱不同時寫入。
 - 鍵盤：另一個 `IOHIDManager` 只讀 HID++ 回報（不讀打字輸入），以 `0x0005` 判斷裝置類型；`0x1004`（電量）、`0x0003`（韌體）、`0x1982`（背光與延遲時間）、`0x40A3`（F 鍵）、`0x4521`（停用按鍵）、`0x4531`（作業系統配置），切換頻道同樣用 `0x1814`。
 - 接收器：另一個 `IOHIDManager` 只和 Logi Bolt 接收器本身通訊，以接收器暫存器搜尋、配對與解除配對（`0xC0`、`0x2C1`、`0x2B5`），配對時暫時開啟無線通知、結束後還原。
+- 其他裝置：另一個 `IOHIDManager` 只開接收器含 HID++ 的介面（不開滑鼠介面），以 `0x1000`／`0x1001`／`0x1004` 讀電量、`0x2201` 讀 DPI、`0x8100` 讀寫內建設定檔、`0x8060` 讀回報率；讀取只在滑鼠停下時進行。
 - 重新連線偵測：`0x1D4B` 的通知、裝置出現／消失、系統喚醒；沒連上時每 3 秒重試。
 
-HID++ 的功能編號與封包格式參考了開源專案 [Solaar](https://github.com/pwr-Solaar/Solaar) 與 [logiops](https://github.com/PixlOne/logiops) 的公開實作。
+HID++ 的功能編號與封包格式參考了開源專案 [Solaar](https://github.com/pwr-Solaar/Solaar) 與 [logiops](https://github.com/PixlOne/logiops) 的公開實作；裝置型號表來自 [libratbag](https://github.com/libratbag/libratbag)（MIT，聲明見 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md)）。
 
 ## 隱私
 
 - 程式不會建立任何網路連線，也不包含分析、廣告或追蹤元件。
-- 設定儲存在 `~/Library/Application Support/MXMasterMac/config.json`。
+- 設定儲存在 `~/Library/Application Support/MXMasterMac/config.json`；電池歷史（`battery-history.json`）與滑鼠設定檔的備份（`profile-backups/`）也在同一個資料夾，只存在這台 Mac 上。
 - 只有在工程模式開啟「寫入記錄檔」時，才會把滑鼠事件寫入同一個資料夾的 `events.log`；記錄內容是按鍵與 HID 封包，不含鍵盤輸入。
 - 不安裝驅動或系統延伸功能。
 
@@ -167,8 +174,15 @@ Sources/
 ├── RingOverlay.swift   # 圓環與手勢提示
 ├── SettingsView.swift  # 設定介面（SwiftUI）
 ├── MouseDiagram.swift  # 滑鼠示意圖
+├── G502Diagram.swift   # G502 示意圖
+├── OtherDevices.swift  # 其他裝置（接收器讀寫）
+├── OtherDevicesProtocol.swift # 其他裝置的封包與寫入流程（純邏輯）
+├── BatteryAlerts.swift # 逐台電量提醒（純邏輯）
+├── BatteryHistory.swift # 電池歷史
+├── InputHold.swift     # 按住型操作（純邏輯）
 └── Config.swift        # 設定檔與語言
 Resources/app.png       # App 圖示來源
+Resources/device-diagrams/ # 各系列的示意圖
 docs/screenshots/       # README 用的畫面截圖
 tools/                  # 協定的單元測試
 build.sh                # 建置腳本

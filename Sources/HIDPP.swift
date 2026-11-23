@@ -5,6 +5,7 @@ struct DeviceSnapshot {
     var transport = ""
     var batteryPercent = -1
     var charging = false
+    var full = false        // 0x1004 狀態 3：已充飽（這時 charging 是 false）
     var firmware = ""
     var dpi = 0
     var dpiMin = 0
@@ -60,7 +61,7 @@ final class HIDPP {
     var onStatus: ((DeviceStatus) -> Void)?
     var onButton: ((Int, Bool) -> Void)?
     var onReady: (() -> Void)?
-    var onBattery: ((Int, Bool) -> Void)?
+    var onBattery: ((Int, Bool, Bool) -> Void)?     // 百分比、充電中、已充飽
     var onArrival: (() -> Void)?        // 滑鼠離開後又連回這台電腦
 
     private let work = DispatchQueue(label: "mxmastermac.hidpp")
@@ -107,7 +108,9 @@ final class HIDPP {
         self.manager = manager
         let matches: [[String: Any]] = [
             [kIOHIDVendorIDKey: HIDPP.vendor, kIOHIDProductIDKey: HIDPP.directProduct],
-            [kIOHIDVendorIDKey: HIDPP.vendor, kIOHIDProductIDKey: HIDPP.boltProduct],
+            // Bolt 接收器只開 HID++ 的廠商介面（0xFF00），不開滑鼠／鍵盤介面（同 G502 閃現的教訓：IOHIDManagerOpen 會打開
+            // 所有比對到的介面，移動回報全送進 App）。藍牙直連的 B042 只有一個介面，HID++ 就在上面，不能這樣限定。
+            [kIOHIDVendorIDKey: HIDPP.vendor, kIOHIDProductIDKey: HIDPP.boltProduct, kIOHIDPrimaryUsagePageKey: 0xFF00],
         ]
         IOHIDManagerSetDeviceMatchingMultiple(manager, matches as CFArray)
         let context = Unmanaged.passUnretained(self).toOpaque()
@@ -429,8 +432,8 @@ final class HIDPP {
             notifyArrival()
         } else if bytes[2] == batteryIndex && batteryIndex != 0 && bytes[3] == 0x00 {
             let percent = Int(bytes[4])
-            let charging = bytes[6] == 1 || bytes[6] == 2
-            DispatchQueue.main.async { [weak self] in self?.onBattery?(percent, charging) }
+            let charging = bytes[6] == 1 || bytes[6] == 2, full = bytes[6] == 3
+            DispatchQueue.main.async { [weak self] in self?.onBattery?(percent, charging, full) }
         } else if bytes[2] != reprogIndex && bytes[2] != wheelIndex {
             // 改道功能的其他通知與滾輪轉動通知（Options+ 開的）數量很大，不記錄。
             log("event " + hex(bytes, 0, 10))
@@ -638,6 +641,7 @@ final class HIDPP {
             s.raw.append("1004 status=" + hex(reply, 4, 3))
             s.batteryPercent = Int(reply[4])
             s.charging = reply[6] == 1 || reply[6] == 2
+            s.full = reply[6] == 3
         }
         if let count = call(0x0003, 0) {
             for i in 0..<min(Int(count[4]), 8) {

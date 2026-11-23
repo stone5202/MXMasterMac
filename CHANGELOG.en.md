@@ -4,6 +4,20 @@
   <a href="CHANGELOG.md">繁體中文</a> · <strong>English</strong>
 </p>
 
+## 2.5 — 2026-11-23
+
+- **New Other Devices page** (between Receiver and Advanced): lists Logitech devices on Lightspeed, Unifying and Nano receivers with connection, battery, charging, pointer speed, report rate, firmware and the last read time. Several devices get a tab row; a sleeping or powered-off device shows as not responding, and a card stays when its receiver is unplugged and recovers when it is plugged back in. Tested on real hardware with G502 LIGHTSPEED and M331.
+- **G502 LIGHTSPEED**: switch DPI levels and onboard profiles, and edit DPI levels, the default level, report rate, lighting (off, fixed color, color cycle, breathing) and buttons. Settings live in the mouse and work without the app; each write is backed up first and read back, undone on a mismatch, and can be restored with one click. Other models show information only until editing has been verified.
+- **Buttons handed to the app**: G502 buttons can run any app action, stored per mouse and per profile.
+- **Device identification and drawings**: built-in data for Logitech models and drawings for 25 series. The drawings are original illustrations and, except for G502, aren't linked to the button list yet.
+- **New actions**: "Show Actions Ring" lets other buttons hold to open the ring; "Gesture button" lets the middle and side buttons, the Actions Ring button (with the ring off) and G502 buttons handed to the app hold and swipe in four directions.
+- **Haptics rules**: gestures and the ring used from another mouse no longer vibrate MX Master 4; actions that change MX Master 4 itself (precision mode, wheel mode, channel switching) still do.
+- **Battery**: each device can have its own low-battery threshold and full-charge notice, and the keyboard gets a low-battery alert. Charging states now include plugged in but not charging, charging error and fast/slow charging. A new battery history chart is kept on this Mac only (30 days). Other devices also appear at the bottom left and in the menu bar; click one at the bottom left to jump to it.
+- **Faster reads that leave the cursor alone**: devices are listed as soon as the app opens and finish reading when the pointer pauses, never while it moves; a device that is turned off shows as not responding right away.
+- Fix: remapping MX Master 4's middle, back or forward button or thumb wheel also changed the same button on mice using a Lightspeed receiver (such as G502).
+- Fix: the pointer of another mouse on a Logitech USB receiver could jump during fast movement. The app no longer opens the receiver's mouse interface.
+- Fixes: changing settings while holding a ring or gesture button, pressing two at once, or releasing right after a fast swipe no longer sticks, misfires or misses the direction; MX Master 4 and the keyboard notify correctly when fully charged, once per charge; a device on another computer no longer records a stale battery level.
+
 ## 2.4 — 2026-11-14
 
 - New Receiver page (between Keyboard and Advanced): pair a new mouse or keyboard with a Logi Bolt receiver (including the passkey typed on a keyboard or clicked on a mouse), list the paired devices and unpair them, without installing Logi Bolt or Logi Options+. Before unpairing, the app checks that the slot still holds the same device; with more than one receiver plugged in, receivers are shown but not changed.

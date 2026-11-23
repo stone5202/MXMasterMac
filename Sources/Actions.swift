@@ -23,6 +23,10 @@ enum MappedAction: String, CaseIterable, Codable {
     case openSettings
     // 滑鼠（由 AppModel 處理）
     case precisionHold, precisionToggle, wheelModeToggle
+    // 叫出 Action Ring（2026-11-23，讓 G502 等其他按鍵也能叫出圓環；由 AppModel 處理）
+    case showActionRing
+    // 手勢鍵（2026-11-23）：按住滑動執行四向手勢，方向動作與拇指手勢鍵共用；只有實體按鍵能選（要有按住與放開）
+    case gestureHold
     // Easy-Switch：把滑鼠切到指定頻道（由 AppModel 處理）
     case hostChannel1, hostChannel2, hostChannel3
     // 自訂
@@ -37,6 +41,16 @@ extension MappedAction {
         case .hostChannel2: return 1
         case .hostChannel3: return 2
         default: return nil
+        }
+    }
+}
+
+extension MouseInput {
+    // 能設成「手勢鍵」的按鍵：要有按下與放開。拇指滾輪沒有放開，拇指手勢鍵本身已經是手勢鍵。
+    var canHoldGesture: Bool {
+        switch self {
+        case .middle, .back, .forward, .actionRing: return true
+        case .gesture, .wheelLeft, .wheelRight: return false
         }
     }
 }
@@ -81,7 +95,7 @@ enum ActionCatalog {
     static var groups: [Group] {
         [
             Group(title: Lang.t("一般", "General"), actions: [.passThrough, .openSettings]),
-            Group(title: Lang.t("滑鼠", "Mouse"), actions: [.precisionHold, .precisionToggle, .wheelModeToggle]),
+            Group(title: Lang.t("滑鼠", "Mouse"), actions: [.gestureHold, .showActionRing, .precisionHold, .precisionToggle, .wheelModeToggle]),
             Group(title: "Easy-Switch", actions: [.hostChannel1, .hostChannel2, .hostChannel3]),
             Group(title: Lang.t("導覽", "Navigation"), actions: [
                 .navigateBack, .navigateForward, .missionControl, .appExpose, .showDesktop,
@@ -162,6 +176,8 @@ enum ActionCatalog {
         case .openSettings: return Lang.t("MX設定", "MX Settings")
         case .precisionHold: return Lang.t("精準模式（按住）", "Precision mode (hold)")
         case .precisionToggle: return Lang.t("精準模式（開／關）", "Precision mode (toggle)")
+        case .showActionRing: return Lang.t("叫出 Action Ring", "Show Actions Ring")
+        case .gestureHold: return Lang.t("手勢鍵", "Gesture button")
         case .wheelModeToggle: return Lang.t("切換段落／自由滾動", "Toggle ratchet / free spin")
         case .hostChannel1, .hostChannel2, .hostChannel3: return ""   // 上面已處理
         case .customShortcut: return Lang.t("自訂快捷鍵…", "Custom shortcut…")
@@ -223,6 +239,8 @@ enum ActionCatalog {
         case .openSettings: return "slider.horizontal.3"
         case .precisionHold: return "scope"
         case .precisionToggle: return "dot.scope"
+        case .showActionRing: return "circle.dashed"
+        case .gestureHold: return "hand.draw"
         case .wheelModeToggle: return "dial.medium"
         case .hostChannel1: return "1.circle"
         case .hostChannel2: return "2.circle"
@@ -296,7 +314,7 @@ enum ActionRunner {
             return combo(shortcut.keyCode, shortcut.flags)
         case .launch: return launch(binding.param)
         // 從圓環、手勢或拇指滾輪執行時沒有「按住」可言，精準模式（按住）在這裡等同開／關。
-        case .precisionHold, .precisionToggle, .wheelModeToggle, .hostChannel1, .hostChannel2, .hostChannel3:
+        case .precisionHold, .precisionToggle, .wheelModeToggle, .hostChannel1, .hostChannel2, .hostChannel3, .showActionRing, .gestureHold:
             return mouseAction?(binding.action) ?? false
         case .openSettings:
             guard let openSettings else { return false }

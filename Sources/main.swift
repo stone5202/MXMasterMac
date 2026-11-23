@@ -63,6 +63,38 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             battery.isEnabled = false
             menu.addItem(battery)
         }
+        // 「其他裝置」頁連著的裝置（例如 G502），各一行。
+        for other in model.otherDevices where other.link == .online && other.batteryPercent >= 0 {
+            let line = NSMenuItem(title: OthersPage.shortName(other) + " " + OthersPage.batteryText(other), action: nil, keyEquivalent: "")
+            line.isEnabled = false
+            menu.addItem(line)
+        }
+        // 可切段的裝置（例如 G502 內建設定檔模式）：子選單切指標速度段與設定檔，不用開設定視窗。
+        for other in model.otherDevices where other.canSwitchStage {
+            let sub = NSMenu()
+            for (index, dpi) in other.dpiStages.enumerated() where dpi > 0 {
+                let stage = NSMenuItem(title: "\(dpi) DPI", action: #selector(pickOtherStage(_:)), keyEquivalent: "")
+                stage.target = self
+                stage.representedObject = [other.id, index] as [Any]
+                stage.state = other.stageIndex == index ? .on : .off
+                sub.addItem(stage)
+            }
+            if other.profiles.count > 1 {
+                sub.addItem(.separator())
+                for (number, sector) in other.profiles.enumerated() {
+                    let profile = NSMenuItem(title: Lang.t("設定檔 \(number + 1)", "Profile \(number + 1)"),
+                                             action: #selector(pickOtherProfile(_:)), keyEquivalent: "")
+                    profile.target = self
+                    profile.representedObject = [other.id, sector] as [Any]
+                    profile.state = other.activeProfile == sector ? .on : .off
+                    sub.addItem(profile)
+                }
+            }
+            let title = Lang.t("\(OthersPage.shortName(other)) 指標速度", "\(OthersPage.shortName(other)) pointer speed")
+            let holder = NSMenuItem(title: title, action: nil, keyEquivalent: "")
+            holder.submenu = sub
+            menu.addItem(holder)
+        }
         menu.addItem(.separator())
         menu.addItem(item(Lang.t("開啟設定…", "Open settings…"), #selector(showSettings), ","))
         menu.addItem(item(model.enabled ? Lang.t("暫停", "Pause") : Lang.t("啟用", "Resume"), #selector(toggleEnabled), ""))
@@ -72,6 +104,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
         menu.addItem(flow)
         menu.addItem(.separator())
         menu.addItem(item(Lang.t("結束", "Quit"), #selector(quit), "q"))
+    }
+
+    @objc private func pickOtherStage(_ sender: NSMenuItem) {
+        guard let pair = sender.representedObject as? [Any], let id = pair[0] as? String, let index = pair[1] as? Int else { return }
+        model.setOtherStage(id, index)
+    }
+
+    @objc private func pickOtherProfile(_ sender: NSMenuItem) {
+        guard let pair = sender.representedObject as? [Any], let id = pair[0] as? String, let sector = pair[1] as? Int else { return }
+        model.setOtherProfile(id, sector)
     }
 
     private func item(_ title: String, _ action: Selector, _ key: String) -> NSMenuItem {
@@ -98,6 +140,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate, NSWind
             window = created
         }
         model.refreshDevice()
+        model.refreshOthers()
         NSApp.activate(ignoringOtherApps: true)
         window?.makeKeyAndOrderFront(nil)
     }

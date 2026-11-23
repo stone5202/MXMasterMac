@@ -29,6 +29,8 @@ swiftc -O -swift-version 5 -target arm64-apple-macos14.0 \
     -o "$APP/Contents/MacOS/MXMasterMac" Sources/*.swift
 
 cp Info.plist "$APP/Contents/Info.plist"
+# 「其他裝置」頁的系列示意圖（來源：MXMasterWin/assets/device-diagrams/windows）。
+cp -R Resources/device-diagrams "$APP/Contents/Resources/device-diagrams"
 
 if [ -f "$ICON_SOURCE" ]; then
     ICONSET="$(mktemp -d)/AppIcon.iconset"

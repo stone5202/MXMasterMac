@@ -64,12 +64,12 @@ struct MouseDiagram: View {
 
     // MARK: - 繪製
 
-    private static func rgb(_ r: Double, _ g: Double, _ b: Double, _ a: Double = 1) -> Color {
+    static func rgb(_ r: Double, _ g: Double, _ b: Double, _ a: Double = 1) -> Color {
         Color(.sRGB, red: r / 255, green: g / 255, blue: b / 255, opacity: a)
     }
 
     // 通過所有點的平滑曲線（cardinal spline），closed 表示頭尾相接。
-    private static func curve(_ points: [CGPoint], tension: CGFloat, closed: Bool) -> Path {
+    static func curve(_ points: [CGPoint], tension: CGFloat, closed: Bool) -> Path {
         var path = Path()
         let count = points.count
         guard count > 1 else { return path }
@@ -92,7 +92,7 @@ struct MouseDiagram: View {
         return path
     }
 
-    private static func points(_ values: [CGFloat]) -> [CGPoint] {
+    static func points(_ values: [CGFloat]) -> [CGPoint] {
         stride(from: 0, to: values.count - 1, by: 2).map { CGPoint(x: values[$0], y: values[$0 + 1]) }
     }
 
